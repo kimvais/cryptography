@@ -16,12 +16,14 @@ from __future__ import absolute_import, division, print_function
 import pytest
 
 from cryptography import utils
-from cryptography.exceptions import UnsupportedCipher, InternalError
-from cryptography.hazmat.bindings.commoncrypto.binding import Binding
+from cryptography.exceptions import InternalError, _Reasons
+from cryptography.hazmat.backends import _available_backends
 from cryptography.hazmat.primitives import interfaces
 from cryptography.hazmat.primitives.ciphers.algorithms import AES
 from cryptography.hazmat.primitives.ciphers.base import Cipher
 from cryptography.hazmat.primitives.ciphers.modes import CBC, GCM
+
+from ...utils import raises_unsupported_algorithm
 
 
 @utils.register_interface(interfaces.CipherAlgorithm)
@@ -30,7 +32,8 @@ class DummyCipher(object):
     block_size = 128
 
 
-@pytest.mark.skipif(not Binding.is_available(),
+@pytest.mark.skipif("commoncrypto" not in
+                    [i.name for i in _available_backends()],
                     reason="CommonCrypto not available")
 class TestCommonCrypto(object):
     def test_supports_cipher(self):
@@ -49,13 +52,13 @@ class TestCommonCrypto(object):
         from cryptography.hazmat.backends.commoncrypto.backend import backend
 
         with pytest.raises(ValueError):
-            backend._check_response(backend._lib.kCCAlignmentError)
+            backend._check_cipher_response(backend._lib.kCCAlignmentError)
 
         with pytest.raises(InternalError):
-            backend._check_response(backend._lib.kCCMemoryFailure)
+            backend._check_cipher_response(backend._lib.kCCMemoryFailure)
 
         with pytest.raises(InternalError):
-            backend._check_response(backend._lib.kCCDecodeError)
+            backend._check_cipher_response(backend._lib.kCCDecodeError)
 
     def test_nonexistent_aead_cipher(self):
         from cryptography.hazmat.backends.commoncrypto.backend import Backend
@@ -63,5 +66,5 @@ class TestCommonCrypto(object):
         cipher = Cipher(
             DummyCipher(), GCM(b"fake_iv_here"), backend=b,
         )
-        with pytest.raises(UnsupportedCipher):
+        with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_CIPHER):
             cipher.encryptor()

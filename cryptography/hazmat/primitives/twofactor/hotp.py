@@ -17,7 +17,9 @@ import struct
 
 import six
 
-from cryptography.exceptions import InvalidToken, UnsupportedInterface
+from cryptography.exceptions import (
+    InvalidToken, UnsupportedAlgorithm, _Reasons
+)
 from cryptography.hazmat.backends.interfaces import HMACBackend
 from cryptography.hazmat.primitives import constant_time, hmac
 from cryptography.hazmat.primitives.hashes import SHA1, SHA256, SHA512
@@ -26,20 +28,22 @@ from cryptography.hazmat.primitives.hashes import SHA1, SHA256, SHA512
 class HOTP(object):
     def __init__(self, key, length, algorithm, backend):
         if not isinstance(backend, HMACBackend):
-            raise UnsupportedInterface(
-                "Backend object does not implement HMACBackend")
+            raise UnsupportedAlgorithm(
+                "Backend object does not implement HMACBackend.",
+                _Reasons.BACKEND_MISSING_INTERFACE
+            )
 
         if len(key) < 16:
             raise ValueError("Key length has to be at least 128 bits.")
 
         if not isinstance(length, six.integer_types):
-            raise TypeError("Length parameter must be an integer type")
+            raise TypeError("Length parameter must be an integer type.")
 
         if length < 6 or length > 8:
             raise ValueError("Length of HOTP has to be between 6 to 8.")
 
         if not isinstance(algorithm, (SHA1, SHA256, SHA512)):
-            raise TypeError("Algorithm must be SHA1, SHA256 or SHA512")
+            raise TypeError("Algorithm must be SHA1, SHA256 or SHA512.")
 
         self._key = key
         self._length = length
@@ -53,15 +57,13 @@ class HOTP(object):
 
     def verify(self, hotp, counter):
         if not constant_time.bytes_eq(self.generate(counter), hotp):
-            raise InvalidToken("Supplied HOTP value does not match")
+            raise InvalidToken("Supplied HOTP value does not match.")
 
     def _dynamic_truncate(self, counter):
         ctx = hmac.HMAC(self._key, self._algorithm, self._backend)
         ctx.update(struct.pack(">Q", counter))
         hmac_value = ctx.finalize()
 
-        offset_bits = six.indexbytes(hmac_value, len(hmac_value) - 1) & 0b1111
-
-        offset = int(offset_bits)
+        offset = six.indexbytes(hmac_value, len(hmac_value) - 1) & 0b1111
         p = hmac_value[offset:offset + 4]
         return struct.unpack(">I", p)[0] & 0x7fffffff

@@ -21,6 +21,7 @@ TYPES = """
 static const int Cryptography_HAS_REMOVE_THREAD_STATE;
 static const int Cryptography_HAS_098H_ERROR_CODES;
 static const int Cryptography_HAS_098C_CAMELLIA_CODES;
+static const int Cryptography_HAS_EC_CODES;
 
 struct ERR_string_data_st {
     unsigned long error;
@@ -28,8 +29,8 @@ struct ERR_string_data_st {
 };
 typedef struct ERR_string_data_st ERR_STRING_DATA;
 
-
 static const int ERR_LIB_EVP;
+static const int ERR_LIB_EC;
 static const int ERR_LIB_PEM;
 static const int ERR_LIB_ASN1;
 static const int ERR_LIB_RSA;
@@ -135,9 +136,11 @@ static const int EVP_F_PKCS5_V2_PBE_KEYIVGEN;
 static const int EVP_F_PKCS8_SET_BROKEN;
 static const int EVP_F_RC2_MAGIC_TO_METH;
 static const int EVP_F_RC5_CTRL;
+
 static const int EVP_R_AES_KEY_SETUP_FAILED;
 static const int EVP_R_ASN1_LIB;
 static const int EVP_R_BAD_BLOCK_LENGTH;
+static const int EVP_R_BAD_DECRYPT;
 static const int EVP_R_BAD_KEY_LENGTH;
 static const int EVP_R_BN_DECODE_ERROR;
 static const int EVP_R_BN_PUBKEY_ERROR;
@@ -167,8 +170,13 @@ static const int EVP_R_UNSUPPORTED_CIPHER;
 static const int EVP_R_UNSUPPORTED_KEY_DERIVATION_FUNCTION;
 static const int EVP_R_UNSUPPORTED_KEYLENGTH;
 static const int EVP_R_UNSUPPORTED_SALT_TYPE;
+static const int EVP_R_UNSUPPORTED_PRIVATE_KEY_ALGORITHM;
 static const int EVP_R_WRONG_FINAL_BLOCK_LENGTH;
 static const int EVP_R_WRONG_PUBLIC_KEY_TYPE;
+
+static const int EC_F_EC_GROUP_NEW_BY_CURVE_NAME;
+
+static const int EC_R_UNKNOWN_GROUP;
 
 static const int PEM_F_D2I_PKCS8PRIVATEKEY_BIO;
 static const int PEM_F_D2I_PKCS8PRIVATEKEY_FP;
@@ -215,6 +223,9 @@ static const int PEM_R_UNSUPPORTED_CIPHER;
 static const int PEM_R_UNSUPPORTED_ENCRYPTION;
 
 static const int RSA_R_DATA_TOO_LARGE_FOR_KEY_SIZE;
+static const int RSA_R_DIGEST_TOO_BIG_FOR_RSA_KEY;
+static const int RSA_R_BLOCK_TYPE_IS_NOT_01;
+static const int RSA_R_BLOCK_TYPE_IS_NOT_02;
 """
 
 FUNCTIONS = """
@@ -279,7 +290,7 @@ typedef uint32_t CRYPTO_THREADID;
 void (*ERR_remove_thread_state)(const CRYPTO_THREADID *) = NULL;
 #endif
 
-// OpenSSL 0.9.8h+
+/* OpenSSL 0.9.8h+ */
 #if OPENSSL_VERSION_NUMBER >= 0x0090808fL
 static const long Cryptography_HAS_098H_ERROR_CODES = 1;
 #else
@@ -293,7 +304,7 @@ static const int ASN1_R_NO_MULTIPART_BODY_FAILURE = 0;
 static const int ASN1_R_NO_MULTIPART_BOUNDARY = 0;
 #endif
 
-// OpenSSL 0.9.8c+
+/* OpenSSL 0.9.8c+ */
 #ifdef EVP_F_CAMELLIA_INIT_KEY
 static const long Cryptography_HAS_098C_CAMELLIA_CODES = 1;
 #else
@@ -302,6 +313,14 @@ static const int EVP_F_CAMELLIA_INIT_KEY = 0;
 static const int EVP_R_CAMELLIA_KEY_SETUP_FAILED = 0;
 #endif
 
+// OpenSSL without EC. e.g. RHEL
+#ifndef OPENSSL_NO_EC
+static const long Cryptography_HAS_EC_CODES = 1;
+#else
+static const long Cryptography_HAS_EC_CODES = 0;
+static const int EC_R_UNKNOWN_GROUP = 0;
+static const int EC_F_EC_GROUP_NEW_BY_CURVE_NAME = 0;
+#endif
 """
 
 CONDITIONAL_NAMES = {
@@ -320,5 +339,9 @@ CONDITIONAL_NAMES = {
     "Cryptography_HAS_098C_CAMELLIA_CODES": [
         "EVP_F_CAMELLIA_INIT_KEY",
         "EVP_R_CAMELLIA_KEY_SETUP_FAILED"
+    ],
+    "Cryptography_HAS_EC_CODES": [
+        "EC_R_UNKNOWN_GROUP",
+        "EC_F_EC_GROUP_NEW_BY_CURVE_NAME"
     ]
 }

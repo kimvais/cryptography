@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives import interfaces
 def _verify_key_size(algorithm, key):
     # Verify that the key size matches the expected key size
     if len(key) * 8 not in algorithm.key_sizes:
-        raise ValueError("Invalid key size ({0}) for {1}".format(
+        raise ValueError("Invalid key size ({0}) for {1}.".format(
             len(key) * 8, algorithm.name
         ))
     return key
@@ -122,6 +122,21 @@ class ARC4(object):
 class IDEA(object):
     name = "IDEA"
     block_size = 64
+    key_sizes = frozenset([128])
+
+    def __init__(self, key):
+        self.key = _verify_key_size(self, key)
+
+    @property
+    def key_size(self):
+        return len(self.key) * 8
+
+
+@utils.register_interface(interfaces.BlockCipherAlgorithm)
+@utils.register_interface(interfaces.CipherAlgorithm)
+class SEED(object):
+    name = "SEED"
+    block_size = 128
     key_sizes = frozenset([128])
 
     def __init__(self, key):

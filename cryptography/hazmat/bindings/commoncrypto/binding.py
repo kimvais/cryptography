@@ -13,9 +13,6 @@
 
 from __future__ import absolute_import, division, print_function
 
-import sys
-import platform
-
 from cryptography.hazmat.bindings.utils import build_ffi
 
 
@@ -25,10 +22,16 @@ class Binding(object):
     """
     _module_prefix = "cryptography.hazmat.bindings.commoncrypto."
     _modules = [
+        "cf",
         "common_digest",
         "common_hmac",
         "common_key_derivation",
         "common_cryptor",
+        "secimport",
+        "secitem",
+        "seckey",
+        "seckeychain",
+        "sectransform",
     ]
 
     ffi = None
@@ -42,10 +45,10 @@ class Binding(object):
         if cls.ffi is not None and cls.lib is not None:
             return
 
-        cls.ffi, cls.lib = build_ffi(cls._module_prefix, cls._modules,
-                                     "", "", [])
-
-    @classmethod
-    def is_available(cls):
-        return sys.platform == "darwin" and list(map(
-            int, platform.mac_ver()[0].split("."))) >= [10, 8, 0]
+        cls.ffi, cls.lib = build_ffi(
+            module_prefix=cls._module_prefix,
+            modules=cls._modules,
+            extra_link_args=[
+                "-framework", "Security", "-framework", "CoreFoundation"
+            ]
+        )

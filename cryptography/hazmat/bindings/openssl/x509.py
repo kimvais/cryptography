@@ -24,11 +24,13 @@ INCLUDES = """
  * Note that the result is an opaque type.
  */
 typedef STACK_OF(X509) Cryptography_STACK_OF_X509;
+typedef STACK_OF(X509_CRL) Cryptography_STACK_OF_X509_CRL;
 typedef STACK_OF(X509_REVOKED) Cryptography_STACK_OF_X509_REVOKED;
 """
 
 TYPES = """
 typedef ... Cryptography_STACK_OF_X509;
+typedef ... Cryptography_STACK_OF_X509_CRL;
 typedef ... Cryptography_STACK_OF_X509_REVOKED;
 
 typedef struct {
@@ -76,7 +78,6 @@ typedef struct {
     ...;
 } X509;
 
-typedef ... X509_STORE;
 typedef ... NETSCAPE_SPKI;
 """
 
@@ -160,15 +161,11 @@ X509_REQ *d2i_X509_REQ_bio(BIO *, X509_REQ **);
 
 int i2d_PrivateKey_bio(BIO *, EVP_PKEY *);
 EVP_PKEY *d2i_PrivateKey_bio(BIO *, EVP_PKEY **);
+int i2d_PUBKEY_bio(BIO *, EVP_PKEY *);
+EVP_PKEY *d2i_PUBKEY_bio(BIO *, EVP_PKEY **);
 
 ASN1_INTEGER *X509_get_serialNumber(X509 *);
 int X509_set_serialNumber(X509 *, ASN1_INTEGER *);
-
-/*  X509_STORE */
-X509_STORE *X509_STORE_new(void);
-void X509_STORE_free(X509_STORE *);
-int X509_STORE_add_cert(X509_STORE *, X509 *);
-int X509_verify_cert(X509_STORE_CTX *);
 
 const char *X509_verify_cert_error_string(long);
 
@@ -178,6 +175,26 @@ const char *X509_get_default_cert_file(void);
 const char *X509_get_default_cert_dir_env(void);
 const char *X509_get_default_cert_file_env(void);
 const char *X509_get_default_private_dir(void);
+
+int i2d_RSA_PUBKEY(RSA *, unsigned char **);
+RSA *d2i_RSA_PUBKEY(RSA **, const unsigned char **, long);
+RSA *d2i_RSAPublicKey(RSA **, const unsigned char **, long);
+RSA *d2i_RSAPrivateKey(RSA **, const unsigned char **, long);
+int i2d_DSA_PUBKEY(DSA *, unsigned char **);
+DSA *d2i_DSA_PUBKEY(DSA **, const unsigned char **, long);
+DSA *d2i_DSAPublicKey(DSA **, const unsigned char **, long);
+DSA *d2i_DSAPrivateKey(DSA **, const unsigned char **, long);
+
+RSA *d2i_RSAPrivateKey_bio(BIO *, RSA **);
+int i2d_RSAPrivateKey_bio(BIO *, RSA *);
+RSA *d2i_RSAPublicKey_bio(BIO *, RSA **);
+int i2d_RSAPublicKey_bio(BIO *, RSA *);
+RSA *d2i_RSA_PUBKEY_bio(BIO *, RSA **);
+int i2d_RSA_PUBKEY_bio(BIO *, RSA *);
+DSA *d2i_DSA_PUBKEY_bio(BIO *, DSA **);
+int i2d_DSA_PUBKEY_bio(BIO *, DSA *);
+DSA *d2i_DSAPrivateKey_bio(BIO *, DSA **);
+int i2d_DSAPrivateKey_bio(BIO *, DSA *);
 """
 
 MACROS = """
@@ -205,21 +222,50 @@ void sk_X509_EXTENSION_free(X509_EXTENSIONS *);
 int sk_X509_REVOKED_num(Cryptography_STACK_OF_X509_REVOKED *);
 X509_REVOKED *sk_X509_REVOKED_value(Cryptography_STACK_OF_X509_REVOKED *, int);
 
+int i2d_RSAPublicKey(RSA *, unsigned char **);
+int i2d_RSAPrivateKey(RSA *, unsigned char **);
+int i2d_DSAPublicKey(DSA *, unsigned char **);
+int i2d_DSAPrivateKey(DSA *, unsigned char **);
+
 /* These aren't macros these arguments are all const X on openssl > 1.0.x */
 int X509_CRL_set_lastUpdate(X509_CRL *, ASN1_TIME *);
 int X509_CRL_set_nextUpdate(X509_CRL *, ASN1_TIME *);
 
-/* these use STACK_OF(X509_EXTENSION) in 0.9.8e. Once we drop support for
+/* These use STACK_OF(X509_EXTENSION) in 0.9.8e. Once we drop support for
    RHEL/CentOS 5 we should move these back to FUNCTIONS. */
 int X509_REQ_add_extensions(X509_REQ *, X509_EXTENSIONS *);
 X509_EXTENSIONS *X509_REQ_get_extensions(X509_REQ *);
+
+int i2d_EC_PUBKEY(EC_KEY *, unsigned char **);
+EC_KEY *d2i_EC_PUBKEY(EC_KEY **, const unsigned char **, long);
+EC_KEY *d2i_EC_PUBKEY_bio(BIO *, EC_KEY **);
+int i2d_EC_PUBKEY_bio(BIO *, EC_KEY *);
+EC_KEY *d2i_ECPrivateKey_bio(BIO *, EC_KEY **);
+int i2d_ECPrivateKey_bio(BIO *, EC_KEY *);
 """
 
 CUSTOMIZATIONS = """
-// OpenSSL 0.9.8e does not have this definition
+/* OpenSSL 0.9.8e does not have this definition. */
 #if OPENSSL_VERSION_NUMBER <= 0x0090805fL
 typedef STACK_OF(X509_EXTENSION) X509_EXTENSIONS;
 #endif
+#ifdef OPENSSL_NO_EC
+int (*i2d_EC_PUBKEY)(EC_KEY *, unsigned char **) = NULL;
+EC_KEY *(*d2i_EC_PUBKEY)(EC_KEY **, const unsigned char **, long) = NULL;
+EC_KEY *(*d2i_EC_PUBKEY_bio)(BIO *, EC_KEY **) = NULL;
+int (*i2d_EC_PUBKEY_bio)(BIO *, EC_KEY *) = NULL;
+EC_KEY *(*d2i_ECPrivateKey_bio)(BIO *, EC_KEY **) = NULL;
+int (*i2d_ECPrivateKey_bio)(BIO *, EC_KEY *) = NULL;
+#endif
 """
 
-CONDITIONAL_NAMES = {}
+CONDITIONAL_NAMES = {
+    "Cryptography_HAS_EC": [
+        "i2d_EC_PUBKEY",
+        "d2i_EC_PUBKEY",
+        "d2i_EC_PUBKEY_bio",
+        "i2d_EC_PUBKEY_bio",
+        "d2i_ECPrivateKey_bio",
+        "i2d_ECPrivateKey_bio",
+    ]
+}

@@ -37,6 +37,7 @@ typedef struct evp_pkey_st {
 typedef ... EVP_PKEY_CTX;
 static const int EVP_PKEY_RSA;
 static const int EVP_PKEY_DSA;
+static const int EVP_PKEY_EC;
 static const int EVP_MAX_MD_SIZE;
 static const int EVP_CTRL_GCM_SET_IVLEN;
 static const int EVP_CTRL_GCM_GET_TAG;
@@ -86,6 +87,8 @@ int EVP_PKEY_type(int);
 int EVP_PKEY_bits(EVP_PKEY *);
 int EVP_PKEY_size(EVP_PKEY *);
 RSA *EVP_PKEY_get1_RSA(EVP_PKEY *);
+DSA *EVP_PKEY_get1_DSA(EVP_PKEY *);
+DH *EVP_PKEY_get1_DH(EVP_PKEY *);
 
 int EVP_SignInit(EVP_MD_CTX *, const EVP_MD *);
 int EVP_SignUpdate(EVP_MD_CTX *, const void *, size_t);
@@ -103,6 +106,7 @@ int PKCS5_PBKDF2_HMAC_SHA1(const char *, int, const unsigned char *, int, int,
 
 int EVP_PKEY_set1_RSA(EVP_PKEY *, struct rsa_st *);
 int EVP_PKEY_set1_DSA(EVP_PKEY *, struct dsa_st *);
+int EVP_PKEY_set1_DH(EVP_PKEY *, DH *);
 
 int EVP_PKEY_get_attr_count(const EVP_PKEY *);
 int EVP_PKEY_get_attr_by_NID(const EVP_PKEY *, int, int);
@@ -122,6 +126,11 @@ MACROS = """
 void OpenSSL_add_all_algorithms(void);
 int EVP_PKEY_assign_RSA(EVP_PKEY *, RSA *);
 int EVP_PKEY_assign_DSA(EVP_PKEY *, DSA *);
+
+int EVP_PKEY_assign_EC_KEY(EVP_PKEY *, EC_KEY *);
+EC_KEY *EVP_PKEY_get1_EC_KEY(EVP_PKEY *);
+int EVP_PKEY_set1_EC_KEY(EVP_PKEY *, EC_KEY *);
+
 int EVP_CIPHER_CTX_block_size(const EVP_CIPHER_CTX *);
 int EVP_CIPHER_CTX_ctrl(EVP_CIPHER_CTX *, int, int, void *);
 
@@ -130,7 +139,8 @@ int PKCS5_PBKDF2_HMAC(const char *, int, const unsigned char *, int, int,
 
 int EVP_PKEY_CTX_set_signature_md(EVP_PKEY_CTX *, const EVP_MD *);
 
-// not macros but must be in this section since they're not available in 0.9.8
+/* These aren't macros, but must be in this section because they're not
+   available in 0.9.8. */
 EVP_PKEY_CTX *EVP_PKEY_CTX_new(EVP_PKEY *, ENGINE *);
 EVP_PKEY_CTX *EVP_PKEY_CTX_new_id(int, ENGINE *);
 EVP_PKEY_CTX *EVP_PKEY_CTX_dup(EVP_PKEY_CTX *);
@@ -141,6 +151,8 @@ int EVP_PKEY_sign(EVP_PKEY_CTX *, unsigned char *, size_t *,
 int EVP_PKEY_verify_init(EVP_PKEY_CTX *);
 int EVP_PKEY_verify(EVP_PKEY_CTX *, const unsigned char *, size_t,
                     const unsigned char *, size_t);
+int EVP_PKEY_encrypt_init(EVP_PKEY_CTX *);
+int EVP_PKEY_decrypt_init(EVP_PKEY_CTX *);
 
 /* The following were macros in 0.9.8e. Once we drop support for RHEL/CentOS 5
    we should move these back to FUNCTIONS. */
@@ -148,6 +160,14 @@ const EVP_CIPHER *EVP_CIPHER_CTX_cipher(const EVP_CIPHER_CTX *);
 int EVP_CIPHER_block_size(const EVP_CIPHER *);
 const EVP_MD *EVP_MD_CTX_md(const EVP_MD_CTX *);
 int EVP_MD_size(const EVP_MD *);
+
+/* Must be in macros because EVP_PKEY_CTX is undefined in 0.9.8 */
+int Cryptography_EVP_PKEY_encrypt(EVP_PKEY_CTX *ctx, unsigned char *out,
+                                  size_t *outlen, const unsigned char *in,
+                                  size_t inlen);
+int Cryptography_EVP_PKEY_decrypt(EVP_PKEY_CTX *ctx, unsigned char *out,
+                                  size_t *outlen, const unsigned char *in,
+                                  size_t inlen);
 """
 
 CUSTOMIZATIONS = """
@@ -162,6 +182,21 @@ const long EVP_CTRL_GCM_SET_IVLEN = -1;
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
 const long Cryptography_HAS_PBKDF2_HMAC = 1;
 const long Cryptography_HAS_PKEY_CTX = 1;
+
+/* OpenSSL 0.9.8 defines EVP_PKEY_encrypt and EVP_PKEY_decrypt functions,
+   but they are a completely different signature from the ones in 1.0.0+.
+   These wrapper functions allows us to safely declare them on any version and
+   conditionally remove them on 0.9.8. */
+int Cryptography_EVP_PKEY_encrypt(EVP_PKEY_CTX *ctx, unsigned char *out,
+                                  size_t *outlen, const unsigned char *in,
+                                  size_t inlen) {
+    return EVP_PKEY_encrypt(ctx, out, outlen, in, inlen);
+}
+int Cryptography_EVP_PKEY_decrypt(EVP_PKEY_CTX *ctx, unsigned char *out,
+                                  size_t *outlen, const unsigned char *in,
+                                  size_t inlen) {
+    return EVP_PKEY_decrypt(ctx, out, outlen, in, inlen);
+}
 #else
 const long Cryptography_HAS_PBKDF2_HMAC = 0;
 int (*PKCS5_PBKDF2_HMAC)(const char *, int, const unsigned char *, int, int,
@@ -179,7 +214,19 @@ EVP_PKEY_CTX *(*EVP_PKEY_CTX_new)(EVP_PKEY *, ENGINE *) = NULL;
 EVP_PKEY_CTX *(*EVP_PKEY_CTX_new_id)(int, ENGINE *) = NULL;
 EVP_PKEY_CTX *(*EVP_PKEY_CTX_dup)(EVP_PKEY_CTX *) = NULL;
 void (*EVP_PKEY_CTX_free)(EVP_PKEY_CTX *) = NULL;
+int (*EVP_PKEY_encrypt_init)(EVP_PKEY_CTX *) = NULL;
+int (*EVP_PKEY_decrypt_init)(EVP_PKEY_CTX *) = NULL;
+int (*Cryptography_EVP_PKEY_encrypt)(EVP_PKEY_CTX *, unsigned char *, size_t *,
+                                     const unsigned char *, size_t) = NULL;
+int (*Cryptography_EVP_PKEY_decrypt)(EVP_PKEY_CTX *, unsigned char *, size_t *,
+                                     const unsigned char *, size_t) = NULL;
 #endif
+#ifdef OPENSSL_NO_EC
+int (*EVP_PKEY_assign_EC_KEY)(EVP_PKEY *, EC_KEY *) = NULL;
+EC_KEY *(*EVP_PKEY_get1_EC_KEY)(EVP_PKEY *) = NULL;
+int (*EVP_PKEY_set1_EC_KEY)(EVP_PKEY *, EC_KEY *) = NULL;
+#endif
+
 """
 
 CONDITIONAL_NAMES = {
@@ -200,6 +247,15 @@ CONDITIONAL_NAMES = {
         "EVP_PKEY_sign_init",
         "EVP_PKEY_verify",
         "EVP_PKEY_verify_init",
+        "Cryptography_EVP_PKEY_encrypt",
+        "EVP_PKEY_encrypt_init",
+        "Cryptography_EVP_PKEY_decrypt",
+        "EVP_PKEY_decrypt_init",
         "EVP_PKEY_CTX_set_signature_md",
+    ],
+    "Cryptography_HAS_EC": [
+        "EVP_PKEY_assign_EC_KEY",
+        "EVP_PKEY_get1_EC_KEY",
+        "EVP_PKEY_set1_EC_KEY",
     ]
 }

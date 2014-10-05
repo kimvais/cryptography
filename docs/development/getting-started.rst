@@ -2,8 +2,9 @@ Getting started
 ===============
 
 Working on ``cryptography`` requires the installation of a small number of
-development dependencies. These are listed in ``dev-requirements.txt`` and they
-can be installed in a `virtualenv`_ using `pip`_. Once you've installed the
+development dependencies in addition to the dependencies for
+:doc:`/installation`. These are listed in ``dev-requirements.txt`` and they can
+be installed in a `virtualenv`_ using `pip`_. Once you've installed the
 dependencies, install ``cryptography`` in ``editable`` mode. For example:
 
 .. code-block:: console
@@ -11,6 +12,9 @@ dependencies, install ``cryptography`` in ``editable`` mode. For example:
     $ # Create a virtualenv and activate it
     $ pip install --requirement dev-requirements.txt
     $ pip install --editable .
+
+You will also need to install ``enchant`` using your system's package manager
+to check spelling in the documentation.
 
 You are now ready to run the tests and build the documentation.
 

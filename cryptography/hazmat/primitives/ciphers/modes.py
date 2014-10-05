@@ -17,6 +17,13 @@ from cryptography import utils
 from cryptography.hazmat.primitives import interfaces
 
 
+def _check_iv_length(mode, algorithm):
+    if len(mode.initialization_vector) * 8 != algorithm.block_size:
+        raise ValueError("Invalid IV size ({0}) for {1}.".format(
+            len(mode.initialization_vector), mode.name
+        ))
+
+
 @utils.register_interface(interfaces.Mode)
 @utils.register_interface(interfaces.ModeWithInitializationVector)
 class CBC(object):
@@ -25,11 +32,7 @@ class CBC(object):
     def __init__(self, initialization_vector):
         self.initialization_vector = initialization_vector
 
-    def validate_for_algorithm(self, algorithm):
-        if len(self.initialization_vector) * 8 != algorithm.block_size:
-            raise ValueError("Invalid iv size ({0}) for {1}".format(
-                len(self.initialization_vector), self.name
-            ))
+    validate_for_algorithm = _check_iv_length
 
 
 @utils.register_interface(interfaces.Mode)
@@ -48,11 +51,7 @@ class OFB(object):
     def __init__(self, initialization_vector):
         self.initialization_vector = initialization_vector
 
-    def validate_for_algorithm(self, algorithm):
-        if len(self.initialization_vector) * 8 != algorithm.block_size:
-            raise ValueError("Invalid iv size ({0}) for {1}".format(
-                len(self.initialization_vector), self.name
-            ))
+    validate_for_algorithm = _check_iv_length
 
 
 @utils.register_interface(interfaces.Mode)
@@ -63,11 +62,18 @@ class CFB(object):
     def __init__(self, initialization_vector):
         self.initialization_vector = initialization_vector
 
-    def validate_for_algorithm(self, algorithm):
-        if len(self.initialization_vector) * 8 != algorithm.block_size:
-            raise ValueError("Invalid iv size ({0}) for {1}".format(
-                len(self.initialization_vector), self.name
-            ))
+    validate_for_algorithm = _check_iv_length
+
+
+@utils.register_interface(interfaces.Mode)
+@utils.register_interface(interfaces.ModeWithInitializationVector)
+class CFB8(object):
+    name = "CFB8"
+
+    def __init__(self, initialization_vector):
+        self.initialization_vector = initialization_vector
+
+    validate_for_algorithm = _check_iv_length
 
 
 @utils.register_interface(interfaces.Mode)
@@ -80,7 +86,7 @@ class CTR(object):
 
     def validate_for_algorithm(self, algorithm):
         if len(self.nonce) * 8 != algorithm.block_size:
-            raise ValueError("Invalid nonce size ({0}) for {1}".format(
+            raise ValueError("Invalid nonce size ({0}) for {1}.".format(
                 len(self.nonce), self.name
             ))
 
@@ -91,13 +97,16 @@ class CTR(object):
 class GCM(object):
     name = "GCM"
 
-    def __init__(self, initialization_vector, tag=None):
+    def __init__(self, initialization_vector, tag=None, min_tag_length=16):
         # len(initialization_vector) must in [1, 2 ** 64), but it's impossible
         # to actually construct a bytes object that large, so we don't check
         # for it
-        if tag is not None and len(tag) < 4:
+        if min_tag_length < 4:
+            raise ValueError("min_tag_length must be >= 4")
+        if tag is not None and len(tag) < min_tag_length:
             raise ValueError(
-                "Authentication tag must be 4 bytes or longer"
+                "Authentication tag must be {0} bytes or longer.".format(
+                    min_tag_length)
             )
 
         self.initialization_vector = initialization_vector

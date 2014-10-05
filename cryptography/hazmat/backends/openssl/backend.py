@@ -15,40 +15,66 @@ from __future__ import absolute_import, division, print_function
 
 import collections
 import itertools
+import warnings
+from contextlib import contextmanager
 
 import six
 
 from cryptography import utils
 from cryptography.exceptions import (
-    InvalidTag, InternalError, AlreadyFinalized, UnsupportedCipher,
-    UnsupportedAlgorithm, UnsupportedHash, UnsupportedPadding, InvalidSignature
+    InternalError, UnsupportedAlgorithm, _Reasons
 )
 from cryptography.hazmat.backends.interfaces import (
-    CipherBackend, HashBackend, HMACBackend, PBKDF2HMACBackend, RSABackend
+    CMACBackend, CipherBackend, DSABackend, EllipticCurveBackend, HMACBackend,
+    HashBackend, PBKDF2HMACBackend, PEMSerializationBackend,
+    PKCS8SerializationBackend, RSABackend,
+    TraditionalOpenSSLSerializationBackend
+)
+from cryptography.hazmat.backends.openssl.ciphers import (
+    _AESCTRCipherContext, _CipherContext
+)
+from cryptography.hazmat.backends.openssl.cmac import _CMACContext
+from cryptography.hazmat.backends.openssl.dsa import (
+    _DSAParameters, _DSAPrivateKey, _DSAPublicKey
+)
+from cryptography.hazmat.backends.openssl.ec import (
+    _EllipticCurvePrivateKey, _EllipticCurvePublicKey
+)
+from cryptography.hazmat.backends.openssl.hashes import _HashContext
+from cryptography.hazmat.backends.openssl.hmac import _HMACContext
+from cryptography.hazmat.backends.openssl.rsa import (
+    _RSAPrivateKey, _RSAPublicKey
 )
 from cryptography.hazmat.bindings.openssl.binding import Binding
-from cryptography.hazmat.primitives import interfaces, hashes
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, rsa
 from cryptography.hazmat.primitives.asymmetric.padding import (
-    PKCS1v15, PSS, MGF1
+    MGF1, OAEP, PKCS1v15, PSS
 )
 from cryptography.hazmat.primitives.ciphers.algorithms import (
-    AES, Blowfish, Camellia, CAST5, TripleDES, ARC4, IDEA
+    AES, ARC4, Blowfish, CAST5, Camellia, IDEA, SEED, TripleDES
 )
 from cryptography.hazmat.primitives.ciphers.modes import (
-    CBC, CTR, ECB, OFB, CFB, GCM,
+    CBC, CFB, CFB8, CTR, ECB, GCM, OFB
 )
 
 
+_MemoryBIO = collections.namedtuple("_MemoryBIO", ["bio", "char_ptr"])
 _OpenSSLError = collections.namedtuple("_OpenSSLError",
                                        ["code", "lib", "func", "reason"])
 
 
 @utils.register_interface(CipherBackend)
+@utils.register_interface(CMACBackend)
+@utils.register_interface(DSABackend)
+@utils.register_interface(EllipticCurveBackend)
 @utils.register_interface(HashBackend)
 @utils.register_interface(HMACBackend)
 @utils.register_interface(PBKDF2HMACBackend)
+@utils.register_interface(PKCS8SerializationBackend)
 @utils.register_interface(RSABackend)
+@utils.register_interface(TraditionalOpenSSLSerializationBackend)
+@utils.register_interface(PEMSerializationBackend)
 class Backend(object):
     """
     OpenSSL API binding interfaces.
@@ -108,11 +134,14 @@ class Backend(object):
 
     def openssl_version_text(self):
         """
-        Friendly string name of linked OpenSSL.
+        Friendly string name of the loaded OpenSSL library. This is not
+        necessarily the same version as it was compiled against.
 
         Example: OpenSSL 1.0.1e 11 Feb 2013
         """
-        return self._ffi.string(self._lib.OPENSSL_VERSION_TEXT).decode("ascii")
+        return self._ffi.string(
+            self._lib.SSLeay_version(self._lib.SSLEAY_VERSION)
+        ).decode("ascii")
 
     def create_hmac_ctx(self, key, algorithm):
         return _HMACContext(self, key, algorithm)
@@ -128,6 +157,14 @@ class Backend(object):
         return _HashContext(self, algorithm)
 
     def cipher_supported(self, cipher, mode):
+        if self._evp_cipher_supported(cipher, mode):
+            return True
+        elif isinstance(mode, CTR) and isinstance(cipher, AES):
+            return True
+        else:
+            return False
+
+    def _evp_cipher_supported(self, cipher, mode):
         try:
             adapter = self._cipher_registry[type(cipher), type(mode)]
         except KeyError:
@@ -137,32 +174,46 @@ class Backend(object):
 
     def register_cipher_adapter(self, cipher_cls, mode_cls, adapter):
         if (cipher_cls, mode_cls) in self._cipher_registry:
-            raise ValueError("Duplicate registration for: {0} {1}".format(
+            raise ValueError("Duplicate registration for: {0} {1}.".format(
                 cipher_cls, mode_cls)
             )
         self._cipher_registry[cipher_cls, mode_cls] = adapter
 
     def _register_default_ciphers(self):
-        for cipher_cls, mode_cls in itertools.product(
-            [AES, Camellia],
-            [CBC, CTR, ECB, OFB, CFB],
-        ):
+        for mode_cls in [CBC, CTR, ECB, OFB, CFB, CFB8]:
             self.register_cipher_adapter(
-                cipher_cls,
+                AES,
                 mode_cls,
                 GetCipherByName("{cipher.name}-{cipher.key_size}-{mode.name}")
             )
-        for mode_cls in [CBC, CFB, OFB]:
+        for mode_cls in [CBC, CTR, ECB, OFB, CFB]:
+            self.register_cipher_adapter(
+                Camellia,
+                mode_cls,
+                GetCipherByName("{cipher.name}-{cipher.key_size}-{mode.name}")
+            )
+        for mode_cls in [CBC, CFB, CFB8, OFB]:
             self.register_cipher_adapter(
                 TripleDES,
                 mode_cls,
                 GetCipherByName("des-ede3-{mode.name}")
             )
+        self.register_cipher_adapter(
+            TripleDES,
+            ECB,
+            GetCipherByName("des-ede3")
+        )
         for mode_cls in [CBC, CFB, OFB, ECB]:
             self.register_cipher_adapter(
                 Blowfish,
                 mode_cls,
                 GetCipherByName("bf-{mode.name}")
+            )
+        for mode_cls in [CBC, CFB, OFB, ECB]:
+            self.register_cipher_adapter(
+                SEED,
+                mode_cls,
+                GetCipherByName("seed-{mode.name}")
             )
         for cipher_cls, mode_cls in itertools.product(
             [CAST5, IDEA],
@@ -185,10 +236,24 @@ class Backend(object):
         )
 
     def create_symmetric_encryption_ctx(self, cipher, mode):
-        return _CipherContext(self, cipher, mode, _CipherContext._ENCRYPT)
+        if (isinstance(mode, CTR) and isinstance(cipher, AES)
+                and not self._evp_cipher_supported(cipher, mode)):
+            # This is needed to provide support for AES CTR mode in OpenSSL
+            # 0.9.8. It can be removed when we drop 0.9.8 support (RHEL 5
+            # extended life ends 2020).
+            return _AESCTRCipherContext(self, cipher, mode)
+        else:
+            return _CipherContext(self, cipher, mode, _CipherContext._ENCRYPT)
 
     def create_symmetric_decryption_ctx(self, cipher, mode):
-        return _CipherContext(self, cipher, mode, _CipherContext._DECRYPT)
+        if (isinstance(mode, CTR) and isinstance(cipher, AES)
+                and not self._evp_cipher_supported(cipher, mode)):
+            # This is needed to provide support for AES CTR mode in OpenSSL
+            # 0.9.8. It can be removed when we drop 0.9.8 support (RHEL 5
+            # extended life ends 2020).
+            return _AESCTRCipherContext(self, cipher, mode)
+        else:
+            return _CipherContext(self, cipher, mode, _CipherContext._DECRYPT)
 
     def pbkdf2_hmac_supported(self, algorithm):
         if self._lib.Cryptography_HAS_PBKDF2_HMAC:
@@ -219,9 +284,10 @@ class Backend(object):
             assert res == 1
         else:
             if not isinstance(algorithm, hashes.SHA1):
-                raise UnsupportedHash(
+                raise UnsupportedAlgorithm(
                     "This version of OpenSSL only supports PBKDF2HMAC with "
-                    "SHA1"
+                    "SHA1.",
+                    _Reasons.UNSUPPORTED_HASH
                 )
             res = self._lib.PKCS5_PBKDF2_HMAC_SHA1(
                 key_material,
@@ -258,7 +324,7 @@ class Backend(object):
     def _unknown_error(self, error):
         return InternalError(
             "Unknown error code {0} from OpenSSL, "
-            "you should probably file a bug. {1}".format(
+            "you should probably file a bug. {1}.".format(
                 error.code, self._err_string(error.code)
             )
         )
@@ -283,7 +349,7 @@ class Backend(object):
             self._lib.OPENSSL_free(hex_cdata)
             return int(hex_str, 16)
 
-    def _int_to_bn(self, num):
+    def _int_to_bn(self, num, bn=None):
         """
         Converts a python integer to a BIGNUM. The returned BIGNUM will not
         be garbage collected (to support adding them to structs that take
@@ -291,11 +357,14 @@ class Backend(object):
         be discarded after use.
         """
 
+        if bn is None:
+            bn = self._ffi.NULL
+
         if six.PY3:
             # Python 3 has constant time to_bytes, so use that.
 
             binary = num.to_bytes(int(num.bit_length() / 8.0 + 1), "big")
-            bn_ptr = self._lib.BN_bin2bn(binary, len(binary), self._ffi.NULL)
+            bn_ptr = self._lib.BN_bin2bn(binary, len(binary), bn)
             assert bn_ptr != self._ffi.NULL
             return bn_ptr
 
@@ -304,114 +373,643 @@ class Backend(object):
 
             hex_num = hex(num).rstrip("L").lstrip("0x").encode("ascii") or b"0"
             bn_ptr = self._ffi.new("BIGNUM **")
+            bn_ptr[0] = bn
             res = self._lib.BN_hex2bn(bn_ptr, hex_num)
             assert res != 0
             assert bn_ptr[0] != self._ffi.NULL
             return bn_ptr[0]
 
     def generate_rsa_private_key(self, public_exponent, key_size):
-        if public_exponent < 3:
-            raise ValueError("public_exponent must be >= 3")
+        rsa._verify_rsa_parameters(public_exponent, key_size)
 
-        if public_exponent & 1 == 0:
-            raise ValueError("public_exponent must be odd")
-
-        if key_size < 512:
-            raise ValueError("key_size must be at least 512-bits")
-
-        ctx = self._lib.RSA_new()
-        assert ctx != self._ffi.NULL
-        ctx = self._ffi.gc(ctx, self._lib.RSA_free)
+        rsa_cdata = self._lib.RSA_new()
+        assert rsa_cdata != self._ffi.NULL
+        rsa_cdata = self._ffi.gc(rsa_cdata, self._lib.RSA_free)
 
         bn = self._int_to_bn(public_exponent)
         bn = self._ffi.gc(bn, self._lib.BN_free)
 
         res = self._lib.RSA_generate_key_ex(
-            ctx, key_size, bn, self._ffi.NULL
+            rsa_cdata, key_size, bn, self._ffi.NULL
         )
         assert res == 1
 
-        return self._rsa_cdata_to_private_key(ctx)
+        return _RSAPrivateKey(self, rsa_cdata)
 
-    def _new_evp_pkey(self):
-        evp_pkey = self._lib.EVP_PKEY_new()
-        assert evp_pkey != self._ffi.NULL
-        return self._ffi.gc(evp_pkey, backend._lib.EVP_PKEY_free)
+    def generate_rsa_parameters_supported(self, public_exponent, key_size):
+        return (public_exponent >= 3 and public_exponent & 1 != 0 and
+                key_size >= 512)
 
-    def _rsa_private_key_to_evp_pkey(self, private_key):
-        evp_pkey = self._new_evp_pkey()
-        rsa_cdata = self._rsa_cdata_from_private_key(private_key)
-
+    def load_rsa_private_numbers(self, numbers):
+        rsa._check_private_key_components(
+            numbers.p,
+            numbers.q,
+            numbers.d,
+            numbers.dmp1,
+            numbers.dmq1,
+            numbers.iqmp,
+            numbers.public_numbers.e,
+            numbers.public_numbers.n
+        )
+        rsa_cdata = self._lib.RSA_new()
+        assert rsa_cdata != self._ffi.NULL
+        rsa_cdata = self._ffi.gc(rsa_cdata, self._lib.RSA_free)
+        rsa_cdata.p = self._int_to_bn(numbers.p)
+        rsa_cdata.q = self._int_to_bn(numbers.q)
+        rsa_cdata.d = self._int_to_bn(numbers.d)
+        rsa_cdata.dmp1 = self._int_to_bn(numbers.dmp1)
+        rsa_cdata.dmq1 = self._int_to_bn(numbers.dmq1)
+        rsa_cdata.iqmp = self._int_to_bn(numbers.iqmp)
+        rsa_cdata.e = self._int_to_bn(numbers.public_numbers.e)
+        rsa_cdata.n = self._int_to_bn(numbers.public_numbers.n)
         res = self._lib.RSA_blinding_on(rsa_cdata, self._ffi.NULL)
         assert res == 1
 
-        res = self._lib.EVP_PKEY_assign_RSA(evp_pkey, rsa_cdata)
-        assert res == 1
+        return _RSAPrivateKey(self, rsa_cdata)
 
-        return evp_pkey
-
-    def _rsa_public_key_to_evp_pkey(self, public_key):
-        evp_pkey = self._new_evp_pkey()
-        rsa_cdata = self._rsa_cdata_from_public_key(public_key)
-
+    def load_rsa_public_numbers(self, numbers):
+        rsa._check_public_key_components(numbers.e, numbers.n)
+        rsa_cdata = self._lib.RSA_new()
+        assert rsa_cdata != self._ffi.NULL
+        rsa_cdata = self._ffi.gc(rsa_cdata, self._lib.RSA_free)
+        rsa_cdata.e = self._int_to_bn(numbers.e)
+        rsa_cdata.n = self._int_to_bn(numbers.n)
         res = self._lib.RSA_blinding_on(rsa_cdata, self._ffi.NULL)
         assert res == 1
 
-        res = self._lib.EVP_PKEY_assign_RSA(evp_pkey, rsa_cdata)
-        assert res == 1
+        return _RSAPublicKey(self, rsa_cdata)
 
-        return evp_pkey
+    def _bytes_to_bio(self, data):
+        """
+        Return a _MemoryBIO namedtuple of (BIO, char*).
 
-    def _rsa_cdata_to_private_key(self, cdata):
-        return rsa.RSAPrivateKey(
-            p=self._bn_to_int(cdata.p),
-            q=self._bn_to_int(cdata.q),
-            dmp1=self._bn_to_int(cdata.dmp1),
-            dmq1=self._bn_to_int(cdata.dmq1),
-            iqmp=self._bn_to_int(cdata.iqmp),
-            private_exponent=self._bn_to_int(cdata.d),
-            public_exponent=self._bn_to_int(cdata.e),
-            modulus=self._bn_to_int(cdata.n),
+        The char* is the storage for the BIO and it must stay alive until the
+        BIO is finished with.
+        """
+        data_char_p = self._ffi.new("char[]", data)
+        bio = self._lib.BIO_new_mem_buf(
+            data_char_p, len(data)
+        )
+        assert bio != self._ffi.NULL
+
+        return _MemoryBIO(self._ffi.gc(bio, self._lib.BIO_free), data_char_p)
+
+    def _evp_pkey_to_private_key(self, evp_pkey):
+        """
+        Return the appropriate type of PrivateKey given an evp_pkey cdata
+        pointer.
+        """
+
+        type = evp_pkey.type
+
+        if type == self._lib.EVP_PKEY_RSA:
+            rsa_cdata = self._lib.EVP_PKEY_get1_RSA(evp_pkey)
+            assert rsa_cdata != self._ffi.NULL
+            rsa_cdata = self._ffi.gc(rsa_cdata, self._lib.RSA_free)
+            return _RSAPrivateKey(self, rsa_cdata)
+        elif type == self._lib.EVP_PKEY_DSA:
+            dsa_cdata = self._lib.EVP_PKEY_get1_DSA(evp_pkey)
+            assert dsa_cdata != self._ffi.NULL
+            dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
+            return _DSAPrivateKey(self, dsa_cdata)
+        elif (self._lib.Cryptography_HAS_EC == 1 and
+              type == self._lib.EVP_PKEY_EC):
+            ec_cdata = self._lib.EVP_PKEY_get1_EC_KEY(evp_pkey)
+            assert ec_cdata != self._ffi.NULL
+            ec_cdata = self._ffi.gc(ec_cdata, self._lib.EC_KEY_free)
+            return _EllipticCurvePrivateKey(self, ec_cdata)
+        else:
+            raise UnsupportedAlgorithm("Unsupported key type.")
+
+    def _evp_pkey_to_public_key(self, evp_pkey):
+        """
+        Return the appropriate type of PublicKey given an evp_pkey cdata
+        pointer.
+        """
+
+        type = evp_pkey.type
+
+        if type == self._lib.EVP_PKEY_RSA:
+            rsa_cdata = self._lib.EVP_PKEY_get1_RSA(evp_pkey)
+            assert rsa_cdata != self._ffi.NULL
+            rsa_cdata = self._ffi.gc(rsa_cdata, self._lib.RSA_free)
+            return _RSAPublicKey(self, rsa_cdata)
+        elif type == self._lib.EVP_PKEY_DSA:
+            dsa_cdata = self._lib.EVP_PKEY_get1_DSA(evp_pkey)
+            assert dsa_cdata != self._ffi.NULL
+            dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
+            return _DSAPublicKey(self, dsa_cdata)
+        elif (self._lib.Cryptography_HAS_EC == 1 and
+              type == self._lib.EVP_PKEY_EC):
+            ec_cdata = self._lib.EVP_PKEY_get1_EC_KEY(evp_pkey)
+            assert ec_cdata != self._ffi.NULL
+            ec_cdata = self._ffi.gc(ec_cdata, self._lib.EC_KEY_free)
+            return _EllipticCurvePublicKey(self, ec_cdata)
+        else:
+            raise UnsupportedAlgorithm("Unsupported key type.")
+
+    def _pem_password_cb(self, password):
+        """
+        Generate a pem_password_cb function pointer that copied the password to
+        OpenSSL as required and returns the number of bytes copied.
+
+        typedef int pem_password_cb(char *buf, int size,
+                                    int rwflag, void *userdata);
+
+        Useful for decrypting PKCS8 files and so on.
+
+        Returns a tuple of (cdata function pointer, callback function).
+        """
+
+        def pem_password_cb(buf, size, writing, userdata):
+            pem_password_cb.called += 1
+
+            if not password:
+                pem_password_cb.exception = TypeError(
+                    "Password was not given but private key is encrypted."
+                )
+                return 0
+            elif len(password) < size:
+                pw_buf = self._ffi.buffer(buf, size)
+                pw_buf[:len(password)] = password
+                return len(password)
+            else:
+                pem_password_cb.exception = ValueError(
+                    "Passwords longer than {0} bytes are not supported "
+                    "by this backend.".format(size - 1)
+                )
+                return 0
+
+        pem_password_cb.called = 0
+        pem_password_cb.exception = None
+
+        return (
+            self._ffi.callback("int (char *, int, int, void *)",
+                               pem_password_cb),
+            pem_password_cb
         )
 
-    def _rsa_cdata_from_private_key(self, private_key):
-        # Does not GC the RSA cdata. You *must* make sure it's freed
-        # correctly yourself!
-        ctx = self._lib.RSA_new()
-        assert ctx != self._ffi.NULL
-        ctx.p = self._int_to_bn(private_key.p)
-        ctx.q = self._int_to_bn(private_key.q)
-        ctx.d = self._int_to_bn(private_key.d)
-        ctx.e = self._int_to_bn(private_key.e)
-        ctx.n = self._int_to_bn(private_key.n)
-        ctx.dmp1 = self._int_to_bn(private_key.dmp1)
-        ctx.dmq1 = self._int_to_bn(private_key.dmq1)
-        ctx.iqmp = self._int_to_bn(private_key.iqmp)
-        return ctx
-
-    def _rsa_cdata_from_public_key(self, public_key):
-        # Does not GC the RSA cdata. You *must* make sure it's freed
-        # correctly yourself!
-
-        ctx = self._lib.RSA_new()
-        assert ctx != self._ffi.NULL
-        ctx.e = self._int_to_bn(public_key.e)
-        ctx.n = self._int_to_bn(public_key.n)
-        return ctx
-
-    def create_rsa_signature_ctx(self, private_key, padding, algorithm):
-        return _RSASignatureContext(self, private_key, padding, algorithm)
-
-    def create_rsa_verification_ctx(self, public_key, signature, padding,
-                                    algorithm):
-        return _RSAVerificationContext(self, public_key, signature, padding,
-                                       algorithm)
-
-    def mgf1_hash_supported(self, algorithm):
+    def _mgf1_hash_supported(self, algorithm):
         if self._lib.Cryptography_HAS_MGF1_MD:
             return self.hash_supported(algorithm)
         else:
             return isinstance(algorithm, hashes.SHA1)
+
+    def rsa_padding_supported(self, padding):
+        if isinstance(padding, PKCS1v15):
+            return True
+        elif isinstance(padding, PSS) and isinstance(padding._mgf, MGF1):
+            return self._mgf1_hash_supported(padding._mgf._algorithm)
+        elif isinstance(padding, OAEP) and isinstance(padding._mgf, MGF1):
+            return isinstance(padding._mgf._algorithm, hashes.SHA1)
+        else:
+            return False
+
+    def generate_dsa_parameters(self, key_size):
+        if key_size not in (1024, 2048, 3072):
+            raise ValueError(
+                "Key size must be 1024 or 2048 or 3072 bits.")
+
+        if (self._lib.OPENSSL_VERSION_NUMBER < 0x1000000f and
+                key_size > 1024):
+            raise ValueError(
+                "Key size must be 1024 because OpenSSL < 1.0.0 doesn't "
+                "support larger key sizes.")
+
+        ctx = self._lib.DSA_new()
+        assert ctx != self._ffi.NULL
+        ctx = self._ffi.gc(ctx, self._lib.DSA_free)
+
+        res = self._lib.DSA_generate_parameters_ex(
+            ctx, key_size, self._ffi.NULL, 0,
+            self._ffi.NULL, self._ffi.NULL, self._ffi.NULL
+        )
+
+        assert res == 1
+
+        return _DSAParameters(self, ctx)
+
+    def generate_dsa_private_key(self, parameters):
+        ctx = self._lib.DSA_new()
+        assert ctx != self._ffi.NULL
+        ctx = self._ffi.gc(ctx, self._lib.DSA_free)
+        ctx.p = self._lib.BN_dup(parameters._dsa_cdata.p)
+        ctx.q = self._lib.BN_dup(parameters._dsa_cdata.q)
+        ctx.g = self._lib.BN_dup(parameters._dsa_cdata.g)
+
+        self._lib.DSA_generate_key(ctx)
+
+        return _DSAPrivateKey(self, ctx)
+
+    def generate_dsa_private_key_and_parameters(self, key_size):
+        parameters = self.generate_dsa_parameters(key_size)
+        return self.generate_dsa_private_key(parameters)
+
+    def load_dsa_private_numbers(self, numbers):
+        dsa._check_dsa_private_numbers(numbers)
+        parameter_numbers = numbers.public_numbers.parameter_numbers
+
+        dsa_cdata = self._lib.DSA_new()
+        assert dsa_cdata != self._ffi.NULL
+        dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
+
+        dsa_cdata.p = self._int_to_bn(parameter_numbers.p)
+        dsa_cdata.q = self._int_to_bn(parameter_numbers.q)
+        dsa_cdata.g = self._int_to_bn(parameter_numbers.g)
+        dsa_cdata.pub_key = self._int_to_bn(numbers.public_numbers.y)
+        dsa_cdata.priv_key = self._int_to_bn(numbers.x)
+
+        return _DSAPrivateKey(self, dsa_cdata)
+
+    def load_dsa_public_numbers(self, numbers):
+        dsa._check_dsa_parameters(numbers.parameter_numbers)
+        dsa_cdata = self._lib.DSA_new()
+        assert dsa_cdata != self._ffi.NULL
+        dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
+
+        dsa_cdata.p = self._int_to_bn(numbers.parameter_numbers.p)
+        dsa_cdata.q = self._int_to_bn(numbers.parameter_numbers.q)
+        dsa_cdata.g = self._int_to_bn(numbers.parameter_numbers.g)
+        dsa_cdata.pub_key = self._int_to_bn(numbers.y)
+
+        return _DSAPublicKey(self, dsa_cdata)
+
+    def load_dsa_parameter_numbers(self, numbers):
+        dsa._check_dsa_parameters(numbers)
+        dsa_cdata = self._lib.DSA_new()
+        assert dsa_cdata != self._ffi.NULL
+        dsa_cdata = self._ffi.gc(dsa_cdata, self._lib.DSA_free)
+
+        dsa_cdata.p = self._int_to_bn(numbers.p)
+        dsa_cdata.q = self._int_to_bn(numbers.q)
+        dsa_cdata.g = self._int_to_bn(numbers.g)
+
+        return _DSAParameters(self, dsa_cdata)
+
+    def dsa_hash_supported(self, algorithm):
+        if self._lib.OPENSSL_VERSION_NUMBER < 0x1000000f:
+            return isinstance(algorithm, hashes.SHA1)
+        else:
+            return self.hash_supported(algorithm)
+
+    def dsa_parameters_supported(self, p, q, g):
+        if self._lib.OPENSSL_VERSION_NUMBER < 0x1000000f:
+            return (utils.bit_length(p) <= 1024 and utils.bit_length(q) <= 160)
+        else:
+            return True
+
+    def cmac_algorithm_supported(self, algorithm):
+        return (
+            self._lib.Cryptography_HAS_CMAC == 1
+            and self.cipher_supported(algorithm, CBC(
+                b"\x00" * algorithm.block_size))
+        )
+
+    def create_cmac_ctx(self, algorithm):
+        return _CMACContext(self, algorithm)
+
+    def load_pem_private_key(self, data, password):
+        return self._load_key(
+            self._lib.PEM_read_bio_PrivateKey,
+            self._evp_pkey_to_private_key,
+            data,
+            password,
+        )
+
+    def load_pem_public_key(self, data):
+        return self._load_key(
+            self._lib.PEM_read_bio_PUBKEY,
+            self._evp_pkey_to_public_key,
+            data,
+            None,
+        )
+
+    def load_traditional_openssl_pem_private_key(self, data, password):
+        warnings.warn(
+            "load_traditional_openssl_pem_private_key is deprecated and will "
+            "be removed in a future version, use load_pem_private_key "
+            "instead.",
+            utils.DeprecatedIn06,
+            stacklevel=2
+        )
+        return self.load_pem_private_key(data, password)
+
+    def load_pkcs8_pem_private_key(self, data, password):
+        warnings.warn(
+            "load_pkcs8_pem_private_key is deprecated and will be removed in a"
+            " future version, use load_pem_private_key instead.",
+            utils.DeprecatedIn06,
+            stacklevel=2
+        )
+        return self.load_pem_private_key(data, password)
+
+    def _load_key(self, openssl_read_func, convert_func, data, password):
+        mem_bio = self._bytes_to_bio(data)
+
+        password_callback, password_func = self._pem_password_cb(password)
+
+        evp_pkey = openssl_read_func(
+            mem_bio.bio,
+            self._ffi.NULL,
+            password_callback,
+            self._ffi.NULL
+        )
+
+        if evp_pkey == self._ffi.NULL:
+            if password_func.exception is not None:
+                errors = self._consume_errors()
+                assert errors
+                raise password_func.exception
+            else:
+                self._handle_key_loading_error()
+
+        evp_pkey = self._ffi.gc(evp_pkey, self._lib.EVP_PKEY_free)
+
+        if password is not None and password_func.called == 0:
+            raise TypeError(
+                "Password was given but private key is not encrypted.")
+
+        assert (
+            (password is not None and password_func.called == 1) or
+            password is None
+        )
+
+        return convert_func(evp_pkey)
+
+    def _handle_key_loading_error(self):
+        errors = self._consume_errors()
+
+        if not errors:
+            raise ValueError("Could not unserialize key data.")
+
+        elif errors[0][1:] == (
+            self._lib.ERR_LIB_EVP,
+            self._lib.EVP_F_EVP_DECRYPTFINAL_EX,
+            self._lib.EVP_R_BAD_DECRYPT
+        ):
+            raise ValueError("Bad decrypt. Incorrect password?")
+
+        elif errors[0][1:] in (
+            (
+                self._lib.ERR_LIB_PEM,
+                self._lib.PEM_F_PEM_GET_EVP_CIPHER_INFO,
+                self._lib.PEM_R_UNSUPPORTED_ENCRYPTION
+            ),
+
+            (
+                self._lib.ERR_LIB_EVP,
+                self._lib.EVP_F_EVP_PBE_CIPHERINIT,
+                self._lib.EVP_R_UNKNOWN_PBE_ALGORITHM
+            )
+        ):
+            raise UnsupportedAlgorithm(
+                "PEM data is encrypted with an unsupported cipher",
+                _Reasons.UNSUPPORTED_CIPHER
+            )
+
+        elif any(
+            error[1:] == (
+                self._lib.ERR_LIB_EVP,
+                self._lib.EVP_F_EVP_PKCS82PKEY,
+                self._lib.EVP_R_UNSUPPORTED_PRIVATE_KEY_ALGORITHM
+            )
+            for error in errors
+        ):
+            raise UnsupportedAlgorithm(
+                "Unsupported public key algorithm.",
+                _Reasons.UNSUPPORTED_PUBLIC_KEY_ALGORITHM
+            )
+
+        else:
+            assert errors[0][1] in (
+                self._lib.ERR_LIB_EVP,
+                self._lib.ERR_LIB_PEM,
+                self._lib.ERR_LIB_ASN1,
+            )
+            raise ValueError("Could not unserialize key data.")
+
+    def elliptic_curve_supported(self, curve):
+        if self._lib.Cryptography_HAS_EC != 1:
+            return False
+
+        try:
+            curve_nid = self._elliptic_curve_to_nid(curve)
+        except UnsupportedAlgorithm:
+            curve_nid = self._lib.NID_undef
+
+        ctx = self._lib.EC_GROUP_new_by_curve_name(curve_nid)
+
+        if ctx == self._ffi.NULL:
+            errors = self._consume_errors()
+            assert (
+                curve_nid == self._lib.NID_undef or
+                errors[0][1:] == (
+                    self._lib.ERR_LIB_EC,
+                    self._lib.EC_F_EC_GROUP_NEW_BY_CURVE_NAME,
+                    self._lib.EC_R_UNKNOWN_GROUP
+                )
+            )
+            return False
+        else:
+            assert curve_nid != self._lib.NID_undef
+            self._lib.EC_GROUP_free(ctx)
+            return True
+
+    def elliptic_curve_signature_algorithm_supported(
+        self, signature_algorithm, curve
+    ):
+        if self._lib.Cryptography_HAS_EC != 1:
+            return False
+
+        # We only support ECDSA right now.
+        if not isinstance(signature_algorithm, ec.ECDSA):
+            return False
+
+        # Before 0.9.8m OpenSSL can't cope with digests longer than the curve.
+        if (
+            self._lib.OPENSSL_VERSION_NUMBER < 0x009080df and
+            curve.key_size < signature_algorithm.algorithm.digest_size * 8
+        ):
+            return False
+
+        return self.elliptic_curve_supported(curve)
+
+    def generate_elliptic_curve_private_key(self, curve):
+        """
+        Generate a new private key on the named curve.
+        """
+
+        if self.elliptic_curve_supported(curve):
+            curve_nid = self._elliptic_curve_to_nid(curve)
+
+            ec_cdata = self._lib.EC_KEY_new_by_curve_name(curve_nid)
+            assert ec_cdata != self._ffi.NULL
+            ec_cdata = self._ffi.gc(ec_cdata, self._lib.EC_KEY_free)
+
+            res = self._lib.EC_KEY_generate_key(ec_cdata)
+            assert res == 1
+
+            res = self._lib.EC_KEY_check_key(ec_cdata)
+            assert res == 1
+
+            return _EllipticCurvePrivateKey(self, ec_cdata)
+        else:
+            raise UnsupportedAlgorithm(
+                "Backend object does not support {0}.".format(curve.name),
+                _Reasons.UNSUPPORTED_ELLIPTIC_CURVE
+            )
+
+    def elliptic_curve_private_key_from_numbers(self, numbers):
+        warnings.warn(
+            "elliptic_curve_private_key_from_numbers is deprecated and will "
+            "be removed in a future version.",
+            utils.DeprecatedIn06,
+            stacklevel=2
+        )
+        return self.load_elliptic_curve_private_numbers(numbers)
+
+    def load_elliptic_curve_private_numbers(self, numbers):
+        public = numbers.public_numbers
+
+        curve_nid = self._elliptic_curve_to_nid(public.curve)
+
+        ec_cdata = self._lib.EC_KEY_new_by_curve_name(curve_nid)
+        assert ec_cdata != self._ffi.NULL
+        ec_cdata = self._ffi.gc(ec_cdata, self._lib.EC_KEY_free)
+
+        ec_cdata = self._ec_key_set_public_key_affine_coordinates(
+            ec_cdata, public.x, public.y)
+
+        res = self._lib.EC_KEY_set_private_key(
+            ec_cdata, self._int_to_bn(numbers.private_value))
+        assert res == 1
+
+        return _EllipticCurvePrivateKey(self, ec_cdata)
+
+    def elliptic_curve_public_key_from_numbers(self, numbers):
+        warnings.warn(
+            "elliptic_curve_public_key_from_numbers is deprecated and will be "
+            "removed in a future version.",
+            utils.DeprecatedIn06,
+            stacklevel=2
+        )
+        return self.load_elliptic_curve_public_numbers(numbers)
+
+    def load_elliptic_curve_public_numbers(self, numbers):
+        curve_nid = self._elliptic_curve_to_nid(numbers.curve)
+
+        ec_cdata = self._lib.EC_KEY_new_by_curve_name(curve_nid)
+        assert ec_cdata != self._ffi.NULL
+        ec_cdata = self._ffi.gc(ec_cdata, self._lib.EC_KEY_free)
+
+        ec_cdata = self._ec_key_set_public_key_affine_coordinates(
+            ec_cdata, numbers.x, numbers.y)
+
+        return _EllipticCurvePublicKey(self, ec_cdata)
+
+    def _elliptic_curve_to_nid(self, curve):
+        """
+        Get the NID for a curve name.
+        """
+
+        curve_aliases = {
+            "secp192r1": "prime192v1",
+            "secp256r1": "prime256v1"
+        }
+
+        curve_name = curve_aliases.get(curve.name, curve.name)
+
+        curve_nid = self._lib.OBJ_sn2nid(curve_name.encode())
+        if curve_nid == self._lib.NID_undef:
+            raise UnsupportedAlgorithm(
+                "{0} is not a supported elliptic curve".format(curve.name),
+                _Reasons.UNSUPPORTED_ELLIPTIC_CURVE
+            )
+        return curve_nid
+
+    @contextmanager
+    def _tmp_bn_ctx(self):
+        bn_ctx = self._lib.BN_CTX_new()
+        assert bn_ctx != self._ffi.NULL
+        bn_ctx = self._ffi.gc(bn_ctx, self._lib.BN_CTX_free)
+        self._lib.BN_CTX_start(bn_ctx)
+        try:
+            yield bn_ctx
+        finally:
+            self._lib.BN_CTX_end(bn_ctx)
+
+    def _ec_key_determine_group_get_set_funcs(self, ctx):
+        """
+        Given an EC_KEY determine the group and what methods are required to
+        get/set point coordinates.
+        """
+        assert ctx != self._ffi.NULL
+
+        nid_two_field = self._lib.OBJ_sn2nid(b"characteristic-two-field")
+        assert nid_two_field != self._lib.NID_undef
+
+        group = self._lib.EC_KEY_get0_group(ctx)
+        assert group != self._ffi.NULL
+
+        method = self._lib.EC_GROUP_method_of(group)
+        assert method != self._ffi.NULL
+
+        nid = self._lib.EC_METHOD_get_field_type(method)
+        assert nid != self._lib.NID_undef
+
+        if nid == nid_two_field and self._lib.Cryptography_HAS_EC2M:
+            set_func = self._lib.EC_POINT_set_affine_coordinates_GF2m
+            get_func = self._lib.EC_POINT_get_affine_coordinates_GF2m
+        else:
+            set_func = self._lib.EC_POINT_set_affine_coordinates_GFp
+            get_func = self._lib.EC_POINT_get_affine_coordinates_GFp
+
+        assert set_func and get_func
+
+        return set_func, get_func, group
+
+    def _ec_key_set_public_key_affine_coordinates(self, ctx, x, y):
+        """
+        This is a port of EC_KEY_set_public_key_affine_coordinates that was
+        added in 1.0.1.
+
+        Sets the public key point in the EC_KEY context to the affine x and y
+        values.
+        """
+
+        bn_x = self._int_to_bn(x)
+        bn_y = self._int_to_bn(y)
+
+        set_func, get_func, group = (
+            self._ec_key_determine_group_get_set_funcs(ctx)
+        )
+
+        point = self._lib.EC_POINT_new(group)
+        assert point != self._ffi.NULL
+        point = self._ffi.gc(point, self._lib.EC_POINT_free)
+
+        with self._tmp_bn_ctx() as bn_ctx:
+            check_x = self._lib.BN_CTX_get(bn_ctx)
+            check_y = self._lib.BN_CTX_get(bn_ctx)
+
+            res = set_func(group, point, bn_x, bn_y, bn_ctx)
+            assert res == 1
+
+            res = get_func(group, point, check_x, check_y, bn_ctx)
+            assert res == 1
+
+            assert (
+                self._lib.BN_cmp(bn_x, check_x) == 0 and
+                self._lib.BN_cmp(bn_y, check_y) == 0
+            )
+
+        res = self._lib.EC_KEY_set_public_key(ctx, point)
+        assert res == 1
+
+        res = self._lib.EC_KEY_check_key(ctx)
+        assert res == 1
+
+        return ctx
 
 
 class GetCipherByName(object):
@@ -421,533 +1019,6 @@ class GetCipherByName(object):
     def __call__(self, backend, cipher, mode):
         cipher_name = self._fmt.format(cipher=cipher, mode=mode).lower()
         return backend._lib.EVP_get_cipherbyname(cipher_name.encode("ascii"))
-
-
-@utils.register_interface(interfaces.CipherContext)
-@utils.register_interface(interfaces.AEADCipherContext)
-@utils.register_interface(interfaces.AEADEncryptionContext)
-class _CipherContext(object):
-    _ENCRYPT = 1
-    _DECRYPT = 0
-
-    def __init__(self, backend, cipher, mode, operation):
-        self._backend = backend
-        self._cipher = cipher
-        self._mode = mode
-        self._operation = operation
-        self._tag = None
-
-        if isinstance(self._cipher, interfaces.BlockCipherAlgorithm):
-            self._block_size = self._cipher.block_size
-        else:
-            self._block_size = 1
-
-        ctx = self._backend._lib.EVP_CIPHER_CTX_new()
-        ctx = self._backend._ffi.gc(
-            ctx, self._backend._lib.EVP_CIPHER_CTX_free
-        )
-
-        registry = self._backend._cipher_registry
-        try:
-            adapter = registry[type(cipher), type(mode)]
-        except KeyError:
-            raise UnsupportedCipher(
-                "cipher {0} in {1} mode is not supported "
-                "by this backend".format(
-                    cipher.name, mode.name if mode else mode)
-            )
-
-        evp_cipher = adapter(self._backend, cipher, mode)
-        if evp_cipher == self._backend._ffi.NULL:
-            raise UnsupportedCipher(
-                "cipher {0} in {1} mode is not supported "
-                "by this backend".format(
-                    cipher.name, mode.name if mode else mode)
-            )
-
-        if isinstance(mode, interfaces.ModeWithInitializationVector):
-            iv_nonce = mode.initialization_vector
-        elif isinstance(mode, interfaces.ModeWithNonce):
-            iv_nonce = mode.nonce
-        else:
-            iv_nonce = self._backend._ffi.NULL
-        # begin init with cipher and operation type
-        res = self._backend._lib.EVP_CipherInit_ex(ctx, evp_cipher,
-                                                   self._backend._ffi.NULL,
-                                                   self._backend._ffi.NULL,
-                                                   self._backend._ffi.NULL,
-                                                   operation)
-        assert res != 0
-        # set the key length to handle variable key ciphers
-        res = self._backend._lib.EVP_CIPHER_CTX_set_key_length(
-            ctx, len(cipher.key)
-        )
-        assert res != 0
-        if isinstance(mode, GCM):
-            res = self._backend._lib.EVP_CIPHER_CTX_ctrl(
-                ctx, self._backend._lib.EVP_CTRL_GCM_SET_IVLEN,
-                len(iv_nonce), self._backend._ffi.NULL
-            )
-            assert res != 0
-            if operation == self._DECRYPT:
-                res = self._backend._lib.EVP_CIPHER_CTX_ctrl(
-                    ctx, self._backend._lib.EVP_CTRL_GCM_SET_TAG,
-                    len(mode.tag), mode.tag
-                )
-                assert res != 0
-
-        # pass key/iv
-        res = self._backend._lib.EVP_CipherInit_ex(
-            ctx,
-            self._backend._ffi.NULL,
-            self._backend._ffi.NULL,
-            cipher.key,
-            iv_nonce,
-            operation
-        )
-        assert res != 0
-        # We purposely disable padding here as it's handled higher up in the
-        # API.
-        self._backend._lib.EVP_CIPHER_CTX_set_padding(ctx, 0)
-        self._ctx = ctx
-
-    def update(self, data):
-        # OpenSSL 0.9.8e has an assertion in its EVP code that causes it
-        # to SIGABRT if you call update with an empty byte string. This can be
-        # removed when we drop support for 0.9.8e (CentOS/RHEL 5). This branch
-        # should be taken only when length is zero and mode is not GCM because
-        # AES GCM can return improper tag values if you don't call update
-        # with empty plaintext when authenticating AAD for ...reasons.
-        if len(data) == 0 and not isinstance(self._mode, GCM):
-            return b""
-
-        buf = self._backend._ffi.new("unsigned char[]",
-                                     len(data) + self._block_size - 1)
-        outlen = self._backend._ffi.new("int *")
-        res = self._backend._lib.EVP_CipherUpdate(self._ctx, buf, outlen, data,
-                                                  len(data))
-        assert res != 0
-        return self._backend._ffi.buffer(buf)[:outlen[0]]
-
-    def finalize(self):
-        buf = self._backend._ffi.new("unsigned char[]", self._block_size)
-        outlen = self._backend._ffi.new("int *")
-        res = self._backend._lib.EVP_CipherFinal_ex(self._ctx, buf, outlen)
-        if res == 0:
-            errors = self._backend._consume_errors()
-
-            if not errors and isinstance(self._mode, GCM):
-                raise InvalidTag
-
-            assert errors
-
-            if errors[0][1:] == (
-                self._backend._lib.ERR_LIB_EVP,
-                self._backend._lib.EVP_F_EVP_ENCRYPTFINAL_EX,
-                self._backend._lib.EVP_R_DATA_NOT_MULTIPLE_OF_BLOCK_LENGTH
-            ) or errors[0][1:] == (
-                self._backend._lib.ERR_LIB_EVP,
-                self._backend._lib.EVP_F_EVP_DECRYPTFINAL_EX,
-                self._backend._lib.EVP_R_DATA_NOT_MULTIPLE_OF_BLOCK_LENGTH
-            ):
-                raise ValueError(
-                    "The length of the provided data is not a multiple of "
-                    "the block length."
-                )
-            else:
-                raise self._backend._unknown_error(errors[0])
-
-        if (isinstance(self._mode, GCM) and
-           self._operation == self._ENCRYPT):
-            block_byte_size = self._block_size // 8
-            tag_buf = self._backend._ffi.new(
-                "unsigned char[]", block_byte_size
-            )
-            res = self._backend._lib.EVP_CIPHER_CTX_ctrl(
-                self._ctx, self._backend._lib.EVP_CTRL_GCM_GET_TAG,
-                block_byte_size, tag_buf
-            )
-            assert res != 0
-            self._tag = self._backend._ffi.buffer(tag_buf)[:]
-
-        res = self._backend._lib.EVP_CIPHER_CTX_cleanup(self._ctx)
-        assert res == 1
-        return self._backend._ffi.buffer(buf)[:outlen[0]]
-
-    def authenticate_additional_data(self, data):
-        outlen = self._backend._ffi.new("int *")
-        res = self._backend._lib.EVP_CipherUpdate(
-            self._ctx, self._backend._ffi.NULL, outlen, data, len(data)
-        )
-        assert res != 0
-
-    @property
-    def tag(self):
-        return self._tag
-
-
-@utils.register_interface(interfaces.HashContext)
-class _HashContext(object):
-    def __init__(self, backend, algorithm, ctx=None):
-        self.algorithm = algorithm
-
-        self._backend = backend
-
-        if ctx is None:
-            ctx = self._backend._lib.EVP_MD_CTX_create()
-            ctx = self._backend._ffi.gc(ctx,
-                                        self._backend._lib.EVP_MD_CTX_destroy)
-            evp_md = self._backend._lib.EVP_get_digestbyname(
-                algorithm.name.encode("ascii"))
-            if evp_md == self._backend._ffi.NULL:
-                raise UnsupportedHash(
-                    "{0} is not a supported hash on this backend".format(
-                        algorithm.name)
-                )
-            res = self._backend._lib.EVP_DigestInit_ex(ctx, evp_md,
-                                                       self._backend._ffi.NULL)
-            assert res != 0
-
-        self._ctx = ctx
-
-    def copy(self):
-        copied_ctx = self._backend._lib.EVP_MD_CTX_create()
-        copied_ctx = self._backend._ffi.gc(
-            copied_ctx, self._backend._lib.EVP_MD_CTX_destroy
-        )
-        res = self._backend._lib.EVP_MD_CTX_copy_ex(copied_ctx, self._ctx)
-        assert res != 0
-        return _HashContext(self._backend, self.algorithm, ctx=copied_ctx)
-
-    def update(self, data):
-        res = self._backend._lib.EVP_DigestUpdate(self._ctx, data, len(data))
-        assert res != 0
-
-    def finalize(self):
-        buf = self._backend._ffi.new("unsigned char[]",
-                                     self._backend._lib.EVP_MAX_MD_SIZE)
-        outlen = self._backend._ffi.new("unsigned int *")
-        res = self._backend._lib.EVP_DigestFinal_ex(self._ctx, buf, outlen)
-        assert res != 0
-        assert outlen[0] == self.algorithm.digest_size
-        res = self._backend._lib.EVP_MD_CTX_cleanup(self._ctx)
-        assert res == 1
-        return self._backend._ffi.buffer(buf)[:outlen[0]]
-
-
-@utils.register_interface(interfaces.HashContext)
-class _HMACContext(object):
-    def __init__(self, backend, key, algorithm, ctx=None):
-        self.algorithm = algorithm
-        self._backend = backend
-
-        if ctx is None:
-            ctx = self._backend._ffi.new("HMAC_CTX *")
-            self._backend._lib.HMAC_CTX_init(ctx)
-            ctx = self._backend._ffi.gc(
-                ctx, self._backend._lib.HMAC_CTX_cleanup
-            )
-            evp_md = self._backend._lib.EVP_get_digestbyname(
-                algorithm.name.encode('ascii'))
-            if evp_md == self._backend._ffi.NULL:
-                raise UnsupportedHash(
-                    "{0} is not a supported hash on this backend".format(
-                        algorithm.name)
-                )
-            res = self._backend._lib.Cryptography_HMAC_Init_ex(
-                ctx, key, len(key), evp_md, self._backend._ffi.NULL
-            )
-            assert res != 0
-
-        self._ctx = ctx
-        self._key = key
-
-    def copy(self):
-        copied_ctx = self._backend._ffi.new("HMAC_CTX *")
-        self._backend._lib.HMAC_CTX_init(copied_ctx)
-        copied_ctx = self._backend._ffi.gc(
-            copied_ctx, self._backend._lib.HMAC_CTX_cleanup
-        )
-        res = self._backend._lib.Cryptography_HMAC_CTX_copy(
-            copied_ctx, self._ctx
-        )
-        assert res != 0
-        return _HMACContext(
-            self._backend, self._key, self.algorithm, ctx=copied_ctx
-        )
-
-    def update(self, data):
-        res = self._backend._lib.Cryptography_HMAC_Update(
-            self._ctx, data, len(data)
-        )
-        assert res != 0
-
-    def finalize(self):
-        buf = self._backend._ffi.new("unsigned char[]",
-                                     self._backend._lib.EVP_MAX_MD_SIZE)
-        outlen = self._backend._ffi.new("unsigned int *")
-        res = self._backend._lib.Cryptography_HMAC_Final(
-            self._ctx, buf, outlen
-        )
-        assert res != 0
-        assert outlen[0] == self.algorithm.digest_size
-        self._backend._lib.HMAC_CTX_cleanup(self._ctx)
-        return self._backend._ffi.buffer(buf)[:outlen[0]]
-
-
-@utils.register_interface(interfaces.AsymmetricSignatureContext)
-class _RSASignatureContext(object):
-    def __init__(self, backend, private_key, padding, algorithm):
-        self._backend = backend
-        self._private_key = private_key
-        if not isinstance(padding, interfaces.AsymmetricPadding):
-            raise TypeError(
-                "Expected provider of interfaces.AsymmetricPadding")
-
-        if padding.name == "EMSA-PKCS1-v1_5":
-            if self._backend._lib.Cryptography_HAS_PKEY_CTX:
-                self._finalize_method = self._finalize_pkey_ctx
-                self._padding_enum = self._backend._lib.RSA_PKCS1_PADDING
-            else:
-                self._finalize_method = self._finalize_pkcs1
-        else:
-            raise UnsupportedPadding(
-                "{0} is not supported by this backend".format(padding.name)
-            )
-
-        self._padding = padding
-        self._algorithm = algorithm
-        self._hash_ctx = _HashContext(backend, self._algorithm)
-
-    def update(self, data):
-        if self._hash_ctx is None:
-            raise AlreadyFinalized("Context has already been finalized")
-
-        self._hash_ctx.update(data)
-
-    def finalize(self):
-        if self._hash_ctx is None:
-            raise AlreadyFinalized("Context has already been finalized")
-
-        evp_pkey = self._backend._rsa_private_key_to_evp_pkey(
-            self._private_key)
-
-        evp_md = self._backend._lib.EVP_get_digestbyname(
-            self._algorithm.name.encode("ascii"))
-        assert evp_md != self._backend._ffi.NULL
-        pkey_size = self._backend._lib.EVP_PKEY_size(evp_pkey)
-        assert pkey_size > 0
-
-        return self._finalize_method(evp_pkey, pkey_size, evp_md)
-
-    def _finalize_pkey_ctx(self, evp_pkey, pkey_size, evp_md):
-        pkey_ctx = self._backend._lib.EVP_PKEY_CTX_new(
-            evp_pkey, self._backend._ffi.NULL
-        )
-        assert pkey_ctx != self._backend._ffi.NULL
-        res = self._backend._lib.EVP_PKEY_sign_init(pkey_ctx)
-        assert res == 1
-        res = self._backend._lib.EVP_PKEY_CTX_set_signature_md(
-            pkey_ctx, evp_md)
-        assert res > 0
-
-        res = self._backend._lib.EVP_PKEY_CTX_set_rsa_padding(
-            pkey_ctx, self._padding_enum)
-        assert res > 0
-        data_to_sign = self._hash_ctx.finalize()
-        self._hash_ctx = None
-        buflen = self._backend._ffi.new("size_t *")
-        res = self._backend._lib.EVP_PKEY_sign(
-            pkey_ctx,
-            self._backend._ffi.NULL,
-            buflen,
-            data_to_sign,
-            len(data_to_sign)
-        )
-        assert res == 1
-        buf = self._backend._ffi.new("unsigned char[]", buflen[0])
-        res = self._backend._lib.EVP_PKEY_sign(
-            pkey_ctx, buf, buflen, data_to_sign, len(data_to_sign))
-        assert res == 1
-        return self._backend._ffi.buffer(buf)[:]
-
-    def _finalize_pkcs1(self, evp_pkey, pkey_size, evp_md):
-        sig_buf = self._backend._ffi.new("char[]", pkey_size)
-        sig_len = self._backend._ffi.new("unsigned int *")
-        res = self._backend._lib.EVP_SignFinal(
-            self._hash_ctx._ctx,
-            sig_buf,
-            sig_len,
-            evp_pkey
-        )
-        self._hash_ctx.finalize()
-        self._hash_ctx = None
-        assert res == 1
-        return self._backend._ffi.buffer(sig_buf)[:sig_len[0]]
-
-
-@utils.register_interface(interfaces.AsymmetricVerificationContext)
-class _RSAVerificationContext(object):
-    def __init__(self, backend, public_key, signature, padding, algorithm):
-        self._backend = backend
-        self._public_key = public_key
-        self._signature = signature
-        if not isinstance(padding, interfaces.AsymmetricPadding):
-            raise TypeError(
-                "Expected provider of interfaces.AsymmetricPadding")
-
-        if isinstance(padding, PKCS1v15):
-            if self._backend._lib.Cryptography_HAS_PKEY_CTX:
-                self._verify_method = self._verify_pkey_ctx
-                self._padding_enum = self._backend._lib.RSA_PKCS1_PADDING
-            else:
-                self._verify_method = self._verify_pkcs1
-        elif isinstance(padding, PSS):
-            if not isinstance(padding._mgf, MGF1):
-                raise UnsupportedAlgorithm(
-                    "Only MGF1 is supported by this backend"
-                )
-
-            if not self._backend.mgf1_hash_supported(padding._mgf._algorithm):
-                raise UnsupportedHash(
-                    "When OpenSSL is older than 1.0.1 then only SHA1 is "
-                    "supported with MGF1."
-                )
-
-            if self._backend._lib.Cryptography_HAS_PKEY_CTX:
-                self._verify_method = self._verify_pkey_ctx
-                self._padding_enum = self._backend._lib.RSA_PKCS1_PSS_PADDING
-            else:
-                self._verify_method = self._verify_pss
-        else:
-            raise UnsupportedPadding
-
-        self._padding = padding
-        self._algorithm = algorithm
-        self._hash_ctx = _HashContext(backend, self._algorithm)
-
-    def update(self, data):
-        if self._hash_ctx is None:
-            raise AlreadyFinalized("Context has already been finalized")
-
-        self._hash_ctx.update(data)
-
-    def verify(self):
-        if self._hash_ctx is None:
-            raise AlreadyFinalized("Context has already been finalized")
-
-        evp_pkey = self._backend._rsa_public_key_to_evp_pkey(
-            self._public_key)
-
-        evp_md = self._backend._lib.EVP_get_digestbyname(
-            self._algorithm.name.encode("ascii"))
-        assert evp_md != self._backend._ffi.NULL
-
-        self._verify_method(evp_pkey, evp_md)
-
-    def _verify_pkey_ctx(self, evp_pkey, evp_md):
-        pkey_ctx = self._backend._lib.EVP_PKEY_CTX_new(
-            evp_pkey, self._backend._ffi.NULL
-        )
-        assert pkey_ctx != self._backend._ffi.NULL
-        res = self._backend._lib.EVP_PKEY_verify_init(pkey_ctx)
-        assert res == 1
-        res = self._backend._lib.EVP_PKEY_CTX_set_signature_md(
-            pkey_ctx, evp_md)
-        assert res > 0
-
-        res = self._backend._lib.EVP_PKEY_CTX_set_rsa_padding(
-            pkey_ctx, self._padding_enum)
-        assert res > 0
-        if isinstance(self._padding, PSS):
-            res = self._backend._lib.EVP_PKEY_CTX_set_rsa_pss_saltlen(
-                pkey_ctx, self._get_salt_length())
-            assert res > 0
-            if self._backend._lib.Cryptography_HAS_MGF1_MD:
-                # MGF1 MD is configurable in OpenSSL 1.0.1+
-                mgf1_md = self._backend._lib.EVP_get_digestbyname(
-                    self._padding._mgf._algorithm.name.encode("ascii"))
-                assert mgf1_md != self._backend._ffi.NULL
-                res = self._backend._lib.EVP_PKEY_CTX_set_rsa_mgf1_md(
-                    pkey_ctx, mgf1_md
-                )
-                assert res > 0
-
-        data_to_verify = self._hash_ctx.finalize()
-        self._hash_ctx = None
-        res = self._backend._lib.EVP_PKEY_verify(
-            pkey_ctx,
-            self._signature,
-            len(self._signature),
-            data_to_verify,
-            len(data_to_verify)
-        )
-        # The previous call can return negative numbers in the event of an
-        # error. This is not a signature failure but we need to fail if it
-        # occurs.
-        assert res >= 0
-        if res == 0:
-            errors = self._backend._consume_errors()
-            assert errors
-            raise InvalidSignature
-
-    def _verify_pkcs1(self, evp_pkey, evp_md):
-        res = self._backend._lib.EVP_VerifyFinal(
-            self._hash_ctx._ctx,
-            self._signature,
-            len(self._signature),
-            evp_pkey
-        )
-        self._hash_ctx.finalize()
-        self._hash_ctx = None
-        # The previous call can return negative numbers in the event of an
-        # error. This is not a signature failure but we need to fail if it
-        # occurs.
-        assert res >= 0
-        if res == 0:
-            errors = self._backend._consume_errors()
-            assert errors
-            raise InvalidSignature
-
-    def _verify_pss(self, evp_pkey, evp_md):
-        pkey_size = self._backend._lib.EVP_PKEY_size(evp_pkey)
-        assert pkey_size > 0
-        rsa_cdata = self._backend._lib.EVP_PKEY_get1_RSA(evp_pkey)
-        assert rsa_cdata != self._backend._ffi.NULL
-        rsa_cdata = self._backend._ffi.gc(rsa_cdata,
-                                          self._backend._lib.RSA_free)
-        buf = self._backend._ffi.new("unsigned char[]", pkey_size)
-        res = self._backend._lib.RSA_public_decrypt(
-            len(self._signature),
-            self._signature,
-            buf,
-            rsa_cdata,
-            self._backend._lib.RSA_NO_PADDING
-        )
-        if res != pkey_size:
-            errors = self._backend._consume_errors()
-            assert errors
-            raise InvalidSignature
-
-        data_to_verify = self._hash_ctx.finalize()
-        self._hash_ctx = None
-        res = self._backend._lib.RSA_verify_PKCS1_PSS(
-            rsa_cdata,
-            data_to_verify,
-            evp_md,
-            buf,
-            self._get_salt_length()
-        )
-        if res != 1:
-            errors = self._backend._consume_errors()
-            assert errors
-            raise InvalidSignature
-
-    def _get_salt_length(self):
-        if self._padding._mgf._salt_length is MGF1.MAX_LENGTH:
-            return -2
-        else:
-            return self._padding._mgf._salt_length
 
 
 backend = Backend()

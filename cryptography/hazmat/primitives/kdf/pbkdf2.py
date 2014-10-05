@@ -13,11 +13,9 @@
 
 from __future__ import absolute_import, division, print_function
 
-import six
-
 from cryptography import utils
 from cryptography.exceptions import (
-    InvalidKey, UnsupportedHash, AlreadyFinalized, UnsupportedInterface
+    AlreadyFinalized, InvalidKey, UnsupportedAlgorithm, _Reasons
 )
 from cryptography.hazmat.backends.interfaces import PBKDF2HMACBackend
 from cryptography.hazmat.primitives import constant_time, interfaces
@@ -27,36 +25,33 @@ from cryptography.hazmat.primitives import constant_time, interfaces
 class PBKDF2HMAC(object):
     def __init__(self, algorithm, length, salt, iterations, backend):
         if not isinstance(backend, PBKDF2HMACBackend):
-            raise UnsupportedInterface(
-                "Backend object does not implement PBKDF2HMACBackend")
+            raise UnsupportedAlgorithm(
+                "Backend object does not implement PBKDF2HMACBackend.",
+                _Reasons.BACKEND_MISSING_INTERFACE
+            )
 
         if not backend.pbkdf2_hmac_supported(algorithm):
-            raise UnsupportedHash(
-                "{0} is not supported for PBKDF2 by this backend".format(
-                    algorithm.name)
+            raise UnsupportedAlgorithm(
+                "{0} is not supported for PBKDF2 by this backend.".format(
+                    algorithm.name),
+                _Reasons.UNSUPPORTED_HASH
             )
         self._used = False
         self._algorithm = algorithm
         self._length = length
-        if isinstance(salt, six.text_type):
-            raise TypeError(
-                "Unicode-objects must be encoded before using them as key "
-                "material."
-            )
+        if not isinstance(salt, bytes):
+            raise TypeError("salt must be bytes.")
         self._salt = salt
         self._iterations = iterations
         self._backend = backend
 
     def derive(self, key_material):
         if self._used:
-            raise AlreadyFinalized("PBKDF2 instances can only be used once")
+            raise AlreadyFinalized("PBKDF2 instances can only be used once.")
         self._used = True
 
-        if isinstance(key_material, six.text_type):
-            raise TypeError(
-                "Unicode-objects must be encoded before using them as key "
-                "material."
-            )
+        if not isinstance(key_material, bytes):
+            raise TypeError("key_material must be bytes.")
         return self._backend.derive_pbkdf2_hmac(
             self._algorithm,
             self._length,

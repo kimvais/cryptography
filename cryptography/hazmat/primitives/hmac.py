@@ -13,11 +13,9 @@
 
 from __future__ import absolute_import, division, print_function
 
-import six
-
 from cryptography import utils
 from cryptography.exceptions import (
-    AlreadyFinalized, InvalidSignature, UnsupportedInterface
+    AlreadyFinalized, InvalidSignature, UnsupportedAlgorithm, _Reasons
 )
 from cryptography.hazmat.backends.interfaces import HMACBackend
 from cryptography.hazmat.primitives import constant_time, interfaces
@@ -27,8 +25,10 @@ from cryptography.hazmat.primitives import constant_time, interfaces
 class HMAC(object):
     def __init__(self, key, algorithm, backend, ctx=None):
         if not isinstance(backend, HMACBackend):
-            raise UnsupportedInterface(
-                "Backend object does not implement HMACBackend")
+            raise UnsupportedAlgorithm(
+                "Backend object does not implement HMACBackend.",
+                _Reasons.BACKEND_MISSING_INTERFACE
+            )
 
         if not isinstance(algorithm, interfaces.HashAlgorithm):
             raise TypeError("Expected instance of interfaces.HashAlgorithm.")
@@ -43,14 +43,14 @@ class HMAC(object):
 
     def update(self, msg):
         if self._ctx is None:
-            raise AlreadyFinalized("Context was already finalized")
-        if isinstance(msg, six.text_type):
-            raise TypeError("Unicode-objects must be encoded before hashing")
+            raise AlreadyFinalized("Context was already finalized.")
+        if not isinstance(msg, bytes):
+            raise TypeError("msg must be bytes.")
         self._ctx.update(msg)
 
     def copy(self):
         if self._ctx is None:
-            raise AlreadyFinalized("Context was already finalized")
+            raise AlreadyFinalized("Context was already finalized.")
         return HMAC(
             self._key,
             self.algorithm,
@@ -60,14 +60,14 @@ class HMAC(object):
 
     def finalize(self):
         if self._ctx is None:
-            raise AlreadyFinalized("Context was already finalized")
+            raise AlreadyFinalized("Context was already finalized.")
         digest = self._ctx.finalize()
         self._ctx = None
         return digest
 
     def verify(self, signature):
-        if isinstance(signature, six.text_type):
-            raise TypeError("Unicode-objects must be encoded before verifying")
+        if not isinstance(signature, bytes):
+            raise TypeError("signature must be bytes.")
         digest = self.finalize()
         if not constant_time.bytes_eq(digest, signature):
             raise InvalidSignature("Signature did not match digest.")

@@ -14,10 +14,14 @@ Red Hat Enterprise Linux 5) and greater. Earlier versions may work but are
     It implements the following interfaces:
 
     * :class:`~cryptography.hazmat.backends.interfaces.CipherBackend`
+    * :class:`~cryptography.hazmat.backends.interfaces.CMACBackend`
+    * :class:`~cryptography.hazmat.backends.interfaces.DSABackend`
     * :class:`~cryptography.hazmat.backends.interfaces.HashBackend`
     * :class:`~cryptography.hazmat.backends.interfaces.HMACBackend`
     * :class:`~cryptography.hazmat.backends.interfaces.PBKDF2HMACBackend`
+    * :class:`~cryptography.hazmat.backends.interfaces.PKCS8SerializationBackend`
     * :class:`~cryptography.hazmat.backends.interfaces.RSABackend`
+    * :class:`~cryptography.hazmat.backends.interfaces.TraditionalOpenSSLSerializationBackend`
 
     It also exposes the following:
 
@@ -44,9 +48,9 @@ where two different processes can return similar or identical keys and
 compromise the security of the system.
 
 The approach this project has chosen to mitigate this vulnerability is to
-include an engine that replaces the OpenSSL default CSPRNG with one that sources
-its entropy from ``/dev/urandom`` on UNIX-like operating systems and uses
-``CryptGenRandom`` on Windows. This method of pulling from the system pool
+include an engine that replaces the OpenSSL default CSPRNG with one that
+sources its entropy from ``/dev/urandom`` on UNIX-like operating systems and
+uses ``CryptGenRandom`` on Windows. This method of pulling from the system pool
 allows us to avoid potential issues with `initializing the RNG`_ as well as
 protecting us from the ``fork()`` weakness.
 
@@ -68,11 +72,11 @@ On Windows the implementation of ``CryptGenRandom`` depends on which version of
 the operation system you are using. See the `Microsoft documentation`_ for more
 details.
 
-Linux uses its own PRNG design. ``/dev/urandom`` is a non-blocking source seeded
-from the same pool as ``/dev/random``.
+Linux uses its own PRNG design. ``/dev/urandom`` is a non-blocking source
+seeded from the same pool as ``/dev/random``.
 
 
 .. _`OpenSSL`: https://www.openssl.org/
-.. _`initializing the RNG`: http://en.wikipedia.org/wiki/OpenSSL#Vulnerability_in_the_Debian_implementation
+.. _`initializing the RNG`: https://en.wikipedia.org/wiki/OpenSSL#Predictable_keys_.28Debian-specific.29
 .. _`Yarrow`: http://en.wikipedia.org/wiki/Yarrow_algorithm
 .. _`Microsoft documentation`: http://msdn.microsoft.com/en-us/library/windows/desktop/aa379942(v=vs.85).aspx

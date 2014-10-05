@@ -13,20 +13,23 @@
 
 from __future__ import absolute_import, division, print_function
 
+import sys
+
 import cffi
 
 import six
 
 from cryptography import utils
+from cryptography.exceptions import AlreadyFinalized
+from cryptography.hazmat.bindings.utils import _create_modulename
 from cryptography.hazmat.primitives import interfaces
 
 
-_ffi = cffi.FFI()
-_ffi.cdef("""
+TYPES = """
 uint8_t Cryptography_check_pkcs7_padding(const uint8_t *, uint8_t);
-""")
-_lib = _ffi.verify(
-    """
+"""
+
+FUNCTIONS = """
 /* Returns the value of the input with the most-significant-bit copied to all
    of the bits. */
 static uint8_t Cryptography_DUPLICATE_MSB_TO_ALL(uint8_t a) {
@@ -62,7 +65,13 @@ uint8_t Cryptography_check_pkcs7_padding(const uint8_t *data,
     /* Now check the low bit to see if it's set */
     return (mismatch & 1) == 0;
 }
-""",
+"""
+
+_ffi = cffi.FFI()
+_ffi.cdef(TYPES)
+_lib = _ffi.verify(
+    source=FUNCTIONS,
+    modulename=_create_modulename([TYPES], FUNCTIONS, sys.version),
     ext_package="cryptography",
 )
 
@@ -70,10 +79,10 @@ uint8_t Cryptography_check_pkcs7_padding(const uint8_t *data,
 class PKCS7(object):
     def __init__(self, block_size):
         if not (0 <= block_size < 256):
-            raise ValueError("block_size must be in range(0, 256)")
+            raise ValueError("block_size must be in range(0, 256).")
 
         if block_size % 8 != 0:
-            raise ValueError("block_size must be a multiple of 8")
+            raise ValueError("block_size must be a multiple of 8.")
 
         self.block_size = block_size
 
@@ -93,10 +102,10 @@ class _PKCS7PaddingContext(object):
 
     def update(self, data):
         if self._buffer is None:
-            raise ValueError("Context was already finalized")
+            raise AlreadyFinalized("Context was already finalized.")
 
-        if isinstance(data, six.text_type):
-            raise TypeError("Unicode-objects must be encoded before padding")
+        if not isinstance(data, bytes):
+            raise TypeError("data must be bytes.")
 
         self._buffer += data
 
@@ -109,7 +118,7 @@ class _PKCS7PaddingContext(object):
 
     def finalize(self):
         if self._buffer is None:
-            raise ValueError("Context was already finalized")
+            raise AlreadyFinalized("Context was already finalized.")
 
         pad_size = self.block_size // 8 - len(self._buffer)
         result = self._buffer + six.int2byte(pad_size) * pad_size
@@ -126,10 +135,10 @@ class _PKCS7UnpaddingContext(object):
 
     def update(self, data):
         if self._buffer is None:
-            raise ValueError("Context was already finalized")
+            raise AlreadyFinalized("Context was already finalized.")
 
-        if isinstance(data, six.text_type):
-            raise TypeError("Unicode-objects must be encoded before unpadding")
+        if not isinstance(data, bytes):
+            raise TypeError("data must be bytes.")
 
         self._buffer += data
 
@@ -145,17 +154,17 @@ class _PKCS7UnpaddingContext(object):
 
     def finalize(self):
         if self._buffer is None:
-            raise ValueError("Context was already finalized")
+            raise AlreadyFinalized("Context was already finalized.")
 
         if len(self._buffer) != self.block_size // 8:
-            raise ValueError("Invalid padding bytes")
+            raise ValueError("Invalid padding bytes.")
 
         valid = _lib.Cryptography_check_pkcs7_padding(
             self._buffer, self.block_size // 8
         )
 
         if not valid:
-            raise ValueError("Invalid padding bytes")
+            raise ValueError("Invalid padding bytes.")
 
         pad_size = six.indexbytes(self._buffer, -1)
         res = self._buffer[:-pad_size]

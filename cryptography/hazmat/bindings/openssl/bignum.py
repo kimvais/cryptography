@@ -44,6 +44,13 @@ FUNCTIONS = """
 BIGNUM *BN_new(void);
 void BN_free(BIGNUM *);
 
+BN_CTX *BN_CTX_new(void);
+void BN_CTX_free(BN_CTX *);
+
+void BN_CTX_start(BN_CTX *);
+BIGNUM *BN_CTX_get(BN_CTX *);
+void BN_CTX_end(BN_CTX *);
+
 BIGNUM *BN_copy(BIGNUM *, const BIGNUM *);
 BIGNUM *BN_dup(const BIGNUM *);
 
@@ -61,6 +68,7 @@ BIGNUM *BN_bin2bn(const unsigned char *, int, BIGNUM *);
 
 int BN_num_bits(const BIGNUM *);
 
+int BN_cmp(const BIGNUM *, const BIGNUM *);
 int BN_add(BIGNUM *, const BIGNUM *, const BIGNUM *);
 int BN_sub(BIGNUM *, const BIGNUM *, const BIGNUM *);
 int BN_mul(BIGNUM *, const BIGNUM *, const BIGNUM *, BN_CTX *);
@@ -79,12 +87,25 @@ int BN_mod_exp(BIGNUM *, const BIGNUM *, const BIGNUM *, const BIGNUM *,
                BN_CTX *);
 int BN_gcd(BIGNUM *, const BIGNUM *, const BIGNUM *, BN_CTX *);
 BIGNUM *BN_mod_inverse(BIGNUM *, const BIGNUM *, const BIGNUM *, BN_CTX *);
+
+int BN_set_bit(BIGNUM *, int);
+int BN_clear_bit(BIGNUM *, int);
+
+int BN_is_bit_set(const BIGNUM *, int);
+
+int BN_mask_bits(BIGNUM *, int);
 """
 
 MACROS = """
 int BN_zero(BIGNUM *);
 int BN_one(BIGNUM *);
 int BN_mod(BIGNUM *, const BIGNUM *, const BIGNUM *, BN_CTX *);
+
+int BN_lshift(BIGNUM *, const BIGNUM *, int);
+int BN_lshift1(BIGNUM *, BIGNUM *);
+
+int BN_rshift(BIGNUM *, BIGNUM *, int);
+int BN_rshift1(BIGNUM *, BIGNUM *);
 """
 
 CUSTOMIZATIONS = """

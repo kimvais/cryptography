@@ -42,6 +42,7 @@ static const int NID_ecdsa_with_SHA512;
 static const int NID_crl_reason;
 static const int NID_pbe_WithSHA1And3_Key_TripleDES_CBC;
 static const int NID_subject_alt_name;
+static const int NID_issuer_alt_name;
 static const int NID_X9_62_c2pnb163v1;
 static const int NID_X9_62_c2pnb163v2;
 static const int NID_X9_62_c2pnb163v3;
@@ -193,7 +194,7 @@ MACROS = """
 """
 
 CUSTOMIZATIONS = """
-// OpenSSL 0.9.8g+
+/* OpenSSL 0.9.8g+ */
 #if OPENSSL_VERSION_NUMBER >= 0x0090807fL
 static const long Cryptography_HAS_ECDSA_SHA2_NIDS = 1;
 #else

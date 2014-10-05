@@ -75,70 +75,8 @@ specifying a different backend.
 C bindings
 ~~~~~~~~~~
 
-When binding C code with ``cffi`` we have our own style guide, it's pretty
-simple.
-
-Don't name parameters:
-
-.. code-block:: c
-
-    // Good
-    long f(long);
-    // Bad
-    long f(long x);
-
-...unless they're inside a struct:
-
-.. code-block:: c
-
-    struct my_struct {
-        char *name;
-        int number;
-        ...;
-    };
-
-Include ``void`` if the function takes no arguments:
-
-.. code-block:: c
-
-    // Good
-    long f(void);
-    // Bad
-    long f();
-
-Wrap lines at 80 characters like so:
-
-.. code-block:: c
-
-    // Pretend this went to 80 characters
-    long f(long, long,
-           int *)
-
-Include a space after commas between parameters:
-
-.. code-block:: c
-
-    // Good
-    long f(int, char *)
-    // Bad
-    long f(int,char *)
-
-Values set by ``#define`` should be assigned the appropriate type. If you see
-this:
-
-.. code-block:: c
-
-    #define SOME_INTEGER_LITERAL 0x0;
-    #define SOME_UNSIGNED_INTEGER_LITERAL 0x0001U;
-    #define SOME_STRING_LITERAL "hello";
-
-...it should be added to the bindings like so:
-
-.. code-block:: c
-
-    static const int SOME_INTEGER_LITERAL;
-    static const unsigned int SOME_UNSIGNED_INTEGER_LITERAL;
-    static const char *const SOME_STRING_LITERAL;
+More information on C bindings can be found in :doc:`the dedicated
+section of the documentation <c-bindings>`.
 
 Tests
 -----
@@ -153,7 +91,8 @@ details.
 Documentation
 -------------
 
-All features should be documented with prose in the ``docs`` section.
+All features should be documented with prose in the ``docs`` section. To ensure
+it builds and passes `doc8`_ style checks you can run ``tox -e docs``.
 
 Because of the inherent challenges in implementing correct cryptographic
 systems, we want to make our documentation point people in the right directions
@@ -201,3 +140,4 @@ So, specifically:
 .. _`syntax`: http://sphinx-doc.org/domains.html#info-field-lists
 .. _`Studies have shown`: http://www.ibm.com/developerworks/rational/library/11-proven-practices-for-peer-review/
 .. _`our mailing list`: https://mail.python.org/mailman/listinfo/cryptography-dev
+.. _`doc8`: https://github.com/stackforge/doc8

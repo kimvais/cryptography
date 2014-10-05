@@ -13,6 +13,7 @@
 
 from __future__ import absolute_import, division, print_function
 
+import os
 import sys
 import threading
 
@@ -48,11 +49,15 @@ class Binding(object):
         "asn1",
         "bignum",
         "bio",
+        "cmac",
+        "cms",
         "conf",
         "crypto",
         "dh",
         "dsa",
         "ec",
+        "ecdh",
+        "ecdsa",
         "engine",
         "err",
         "evp",
@@ -70,6 +75,7 @@ class Binding(object):
         "x509",
         "x509name",
         "x509v3",
+        "x509_vfy"
     ]
 
     _locks = None
@@ -90,21 +96,24 @@ class Binding(object):
         # OpenSSL goes by a different library name on different operating
         # systems.
         if sys.platform != "win32":
-            libraries = ["crypto", "ssl"]
+            # In some circumstances, the order in which these libs are
+            # specified on the linker command-line is significant;
+            # libssl must come before libcrypto
+            # (http://marc.info/?l=openssl-users&m=135361825921871)
+            libraries = ["ssl", "crypto"]
         else:  # pragma: no cover
-            libraries = ["libeay32", "ssleay32", "advapi32"]
+            link_type = os.environ.get("PYCA_WINDOWS_LINK_TYPE", "static")
+            libraries = _get_windows_libraries(link_type)
 
-        cls.ffi, cls.lib = build_ffi(cls._module_prefix, cls._modules,
-                                     _OSX_PRE_INCLUDE, _OSX_POST_INCLUDE,
-                                     libraries)
+        cls.ffi, cls.lib = build_ffi(
+            module_prefix=cls._module_prefix,
+            modules=cls._modules,
+            pre_include=_OSX_PRE_INCLUDE,
+            post_include=_OSX_POST_INCLUDE,
+            libraries=libraries,
+        )
         res = cls.lib.Cryptography_add_osrandom_engine()
         assert res != 0
-
-    @classmethod
-    def is_available(cls):
-        # For now, OpenSSL is considered our "default" binding, so we treat it
-        # as always available.
-        return True
 
     @classmethod
     def init_static_locks(cls):
@@ -141,7 +150,19 @@ class Binding(object):
             lock.release()
         else:
             raise RuntimeError(
-                "Unknown lock mode {0}: lock={1}, file={2}, line={3}".format(
+                "Unknown lock mode {0}: lock={1}, file={2}, line={3}.".format(
                     mode, n, file, line
                 )
             )
+
+
+def _get_windows_libraries(link_type):
+    if link_type == "dynamic":
+        return ["libeay32", "ssleay32", "advapi32"]
+    elif link_type == "static" or link_type == "":
+        return ["libeay32mt", "ssleay32mt", "advapi32",
+                "crypt32", "gdi32", "user32", "ws2_32"]
+    else:
+        raise ValueError(
+            "PYCA_WINDOWS_LINK_TYPE must be 'static' or 'dynamic'"
+        )

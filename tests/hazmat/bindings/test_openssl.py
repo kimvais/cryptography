@@ -15,7 +15,9 @@ from __future__ import absolute_import, division, print_function
 
 import pytest
 
-from cryptography.hazmat.bindings.openssl.binding import Binding
+from cryptography.hazmat.bindings.openssl.binding import (
+    Binding, _get_windows_libraries
+)
 
 
 class TestOpenSSL(object):
@@ -24,9 +26,6 @@ class TestOpenSSL(object):
         assert binding
         assert binding.lib
         assert binding.ffi
-
-    def test_is_available(self):
-        assert Binding.is_available() is True
 
     def test_crypto_lock_init(self):
         b = Binding()
@@ -84,7 +83,7 @@ class TestOpenSSL(object):
         with pytest.raises(RuntimeError):
             b._lock_cb(0, b.lib.CRYPTO_LOCK_SSL, "<test>", 1)
 
-        # errors shouldnt cause locking
+        # errors shouldn't cause locking
         assert lock.acquire(False)
         lock.release()
 
@@ -103,3 +102,53 @@ class TestOpenSSL(object):
         b = Binding()
         res = b.lib.Cryptography_add_osrandom_engine()
         assert res == 2
+
+    def test_ssl_ctx_options(self):
+        # Test that we're properly handling 32-bit unsigned on all platforms.
+        b = Binding()
+        assert b.lib.SSL_OP_ALL > 0
+        ctx = b.lib.SSL_CTX_new(b.lib.TLSv1_method())
+        ctx = b.ffi.gc(ctx, b.lib.SSL_CTX_free)
+        current_options = b.lib.SSL_CTX_get_options(ctx)
+        resp = b.lib.SSL_CTX_set_options(ctx, b.lib.SSL_OP_ALL)
+        expected_options = current_options | b.lib.SSL_OP_ALL
+        assert resp == expected_options
+        assert b.lib.SSL_CTX_get_options(ctx) == expected_options
+
+    def test_ssl_options(self):
+        # Test that we're properly handling 32-bit unsigned on all platforms.
+        b = Binding()
+        assert b.lib.SSL_OP_ALL > 0
+        ctx = b.lib.SSL_CTX_new(b.lib.TLSv1_method())
+        ctx = b.ffi.gc(ctx, b.lib.SSL_CTX_free)
+        ssl = b.lib.SSL_new(ctx)
+        ssl = b.ffi.gc(ssl, b.lib.SSL_free)
+        current_options = b.lib.SSL_get_options(ssl)
+        resp = b.lib.SSL_set_options(ssl, b.lib.SSL_OP_ALL)
+        expected_options = current_options | b.lib.SSL_OP_ALL
+        assert resp == expected_options
+        assert b.lib.SSL_get_options(ssl) == expected_options
+
+    def test_ssl_mode(self):
+        # Test that we're properly handling 32-bit unsigned on all platforms.
+        b = Binding()
+        assert b.lib.SSL_OP_ALL > 0
+        ctx = b.lib.SSL_CTX_new(b.lib.TLSv1_method())
+        ctx = b.ffi.gc(ctx, b.lib.SSL_CTX_free)
+        ssl = b.lib.SSL_new(ctx)
+        ssl = b.ffi.gc(ssl, b.lib.SSL_free)
+        current_options = b.lib.SSL_get_mode(ssl)
+        resp = b.lib.SSL_set_mode(ssl, b.lib.SSL_OP_ALL)
+        expected_options = current_options | b.lib.SSL_OP_ALL
+        assert resp == expected_options
+        assert b.lib.SSL_get_mode(ssl) == expected_options
+
+    def test_windows_static_dynamic_libraries(self):
+        assert "ssleay32mt" in _get_windows_libraries("static")
+
+        assert "ssleay32mt" in _get_windows_libraries("")
+
+        assert "ssleay32" in _get_windows_libraries("dynamic")
+
+        with pytest.raises(ValueError):
+            _get_windows_libraries("notvalid")

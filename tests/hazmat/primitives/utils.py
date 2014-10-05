@@ -14,21 +14,20 @@
 from __future__ import absolute_import, division, print_function
 
 import binascii
-import os
-
 import itertools
+import os
 
 import pytest
 
-from cryptography.hazmat.primitives import hashes, hmac
-from cryptography.hazmat.primitives.asymmetric import rsa, padding
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.hazmat.primitives.ciphers import Cipher
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
 from cryptography.exceptions import (
-    AlreadyFinalized, NotYetFinalized, AlreadyUpdated, InvalidTag,
+    AlreadyFinalized, AlreadyUpdated, InvalidSignature, InvalidTag,
+    NotYetFinalized
 )
+from cryptography.hazmat.primitives import hashes, hmac
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.ciphers import Cipher
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF, HKDFExpand
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 from ...utils import load_vectors_from_file
 
@@ -91,7 +90,8 @@ def aead_test(backend, cipher_factory, mode_factory, params):
         cipher = Cipher(
             cipher_factory(binascii.unhexlify(params["key"])),
             mode_factory(binascii.unhexlify(params["iv"]),
-                         binascii.unhexlify(params["tag"])),
+                         binascii.unhexlify(params["tag"]),
+                         len(binascii.unhexlify(params["tag"]))),
             backend
         )
         decryptor = cipher.decryptor()
@@ -109,12 +109,13 @@ def aead_test(backend, cipher_factory, mode_factory, params):
         encryptor.authenticate_additional_data(binascii.unhexlify(aad))
         actual_ciphertext = encryptor.update(binascii.unhexlify(plaintext))
         actual_ciphertext += encryptor.finalize()
-        tag_len = len(params["tag"])
-        assert binascii.hexlify(encryptor.tag)[:tag_len] == params["tag"]
+        tag_len = len(binascii.unhexlify(params["tag"]))
+        assert binascii.hexlify(encryptor.tag[:tag_len]) == params["tag"]
         cipher = Cipher(
             cipher_factory(binascii.unhexlify(params["key"])),
             mode_factory(binascii.unhexlify(params["iv"]),
-                         binascii.unhexlify(params["tag"])),
+                         binascii.unhexlify(params["tag"]),
+                         min_tag_length=tag_len),
             backend
         )
         decryptor = cipher.decryptor()
@@ -310,6 +311,9 @@ def aead_tag_exception_test(backend, cipher_factory, mode_factory):
     with pytest.raises(ValueError):
         mode_factory(binascii.unhexlify(b"0" * 24), b"000")
 
+    with pytest.raises(ValueError):
+        mode_factory(binascii.unhexlify(b"0" * 24), b"000000", 2)
+
     cipher = Cipher(
         cipher_factory(binascii.unhexlify(b"0" * 32)),
         mode_factory(binascii.unhexlify(b"0" * 24), b"0" * 16),
@@ -348,15 +352,14 @@ def hkdf_extract_test(backend, algorithm, params):
 
 
 def hkdf_expand_test(backend, algorithm, params):
-    hkdf = HKDF(
+    hkdf = HKDFExpand(
         algorithm,
         int(params["l"]),
-        salt=binascii.unhexlify(params["salt"]) or None,
         info=binascii.unhexlify(params["info"]) or None,
         backend=backend
     )
 
-    okm = hkdf._expand(binascii.unhexlify(params["prk"]))
+    okm = hkdf.derive(binascii.unhexlify(params["prk"]))
 
     assert okm == binascii.unhexlify(params["okm"])
 
@@ -376,33 +379,47 @@ def generate_hkdf_test(param_loader, path, file_names, algorithm):
     return test_hkdf
 
 
-def generate_rsa_pss_test(param_loader, path, file_names, hash_alg):
+def generate_rsa_verification_test(param_loader, path, file_names, hash_alg,
+                                   pad_factory):
     all_params = _load_all_params(path, file_names, param_loader)
     all_params = [i for i in all_params
                   if i["algorithm"] == hash_alg.name.upper()]
 
     @pytest.mark.parametrize("params", all_params)
-    def test_rsa_pss(self, backend, params):
-        rsa_pss_test(backend, params, hash_alg)
+    def test_rsa_verification(self, backend, params):
+        rsa_verification_test(backend, params, hash_alg, pad_factory)
 
-    return test_rsa_pss
+    return test_rsa_verification
 
 
-def rsa_pss_test(backend, params, hash_alg):
-    public_key = rsa.RSAPublicKey(
-        public_exponent=params["public_exponent"],
-        modulus=params["modulus"]
+def rsa_verification_test(backend, params, hash_alg, pad_factory):
+    public_numbers = rsa.RSAPublicNumbers(
+        e=params["public_exponent"],
+        n=params["modulus"]
     )
+    public_key = public_numbers.public_key(backend)
+    pad = pad_factory(params, hash_alg)
     verifier = public_key.verifier(
         binascii.unhexlify(params["s"]),
-        padding.PSS(
-            mgf=padding.MGF1(
-                algorithm=hash_alg,
-                salt_length=params["salt_length"]
-            )
-        ),
-        hash_alg,
-        backend
+        pad,
+        hash_alg
     )
     verifier.update(binascii.unhexlify(params["msg"]))
-    verifier.verify()
+    if params["fail"]:
+        with pytest.raises(InvalidSignature):
+            verifier.verify()
+    else:
+        verifier.verify()
+
+
+def _check_rsa_private_numbers(skey):
+    assert skey
+    pkey = skey.public_numbers
+    assert pkey
+    assert pkey.e
+    assert pkey.n
+    assert skey.d
+    assert skey.p * skey.q == pkey.n
+    assert skey.dmp1 == rsa.rsa_crt_dmp1(skey.d, skey.p)
+    assert skey.dmq1 == rsa.rsa_crt_dmq1(skey.d, skey.q)
+    assert skey.iqmp == rsa.rsa_crt_iqmp(skey.p, skey.q)

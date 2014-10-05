@@ -17,7 +17,7 @@ import six
 
 from cryptography import utils
 from cryptography.exceptions import (
-    AlreadyFinalized, InvalidKey, UnsupportedInterface
+    AlreadyFinalized, InvalidKey, UnsupportedAlgorithm, _Reasons
 )
 from cryptography.hazmat.backends.interfaces import HMACBackend
 from cryptography.hazmat.primitives import constant_time, hmac, interfaces
@@ -27,10 +27,53 @@ from cryptography.hazmat.primitives import constant_time, hmac, interfaces
 class HKDF(object):
     def __init__(self, algorithm, length, salt, info, backend):
         if not isinstance(backend, HMACBackend):
-            raise UnsupportedInterface(
-                "Backend object does not implement HMACBackend")
+            raise UnsupportedAlgorithm(
+                "Backend object does not implement HMACBackend.",
+                _Reasons.BACKEND_MISSING_INTERFACE
+            )
 
         self._algorithm = algorithm
+
+        if not isinstance(salt, bytes) and salt is not None:
+            raise TypeError("salt must be bytes.")
+
+        if salt is None:
+            salt = b"\x00" * (self._algorithm.digest_size // 8)
+
+        self._salt = salt
+
+        self._backend = backend
+
+        self._hkdf_expand = HKDFExpand(self._algorithm, length, info, backend)
+
+    def _extract(self, key_material):
+        h = hmac.HMAC(self._salt, self._algorithm, backend=self._backend)
+        h.update(key_material)
+        return h.finalize()
+
+    def derive(self, key_material):
+        if not isinstance(key_material, bytes):
+            raise TypeError("key_material must be bytes.")
+
+        return self._hkdf_expand.derive(self._extract(key_material))
+
+    def verify(self, key_material, expected_key):
+        if not constant_time.bytes_eq(self.derive(key_material), expected_key):
+            raise InvalidKey
+
+
+@utils.register_interface(interfaces.KeyDerivationFunction)
+class HKDFExpand(object):
+    def __init__(self, algorithm, length, info, backend):
+        if not isinstance(backend, HMACBackend):
+            raise UnsupportedAlgorithm(
+                "Backend object does not implement HMACBackend.",
+                _Reasons.BACKEND_MISSING_INTERFACE
+            )
+
+        self._algorithm = algorithm
+
+        self._backend = backend
 
         max_length = 255 * (algorithm.digest_size // 8)
 
@@ -42,31 +85,15 @@ class HKDF(object):
 
         self._length = length
 
-        if isinstance(salt, six.text_type):
-            raise TypeError(
-                "Unicode-objects must be encoded before using them as a salt.")
-
-        if salt is None:
-            salt = b"\x00" * (self._algorithm.digest_size // 8)
-
-        self._salt = salt
-
-        if isinstance(info, six.text_type):
-            raise TypeError(
-                "Unicode-objects must be encoded before using them as info.")
+        if not isinstance(info, bytes) and info is not None:
+            raise TypeError("info must be bytes.")
 
         if info is None:
             info = b""
 
         self._info = info
-        self._backend = backend
 
         self._used = False
-
-    def _extract(self, key_material):
-        h = hmac.HMAC(self._salt, self._algorithm, backend=self._backend)
-        h.update(key_material)
-        return h.finalize()
 
     def _expand(self, key_material):
         output = [b""]
@@ -83,17 +110,14 @@ class HKDF(object):
         return b"".join(output)[:self._length]
 
     def derive(self, key_material):
-        if isinstance(key_material, six.text_type):
-            raise TypeError(
-                "Unicode-objects must be encoded before using them as key "
-                "material."
-            )
+        if not isinstance(key_material, bytes):
+            raise TypeError("key_material must be bytes.")
 
         if self._used:
             raise AlreadyFinalized
 
         self._used = True
-        return self._expand(self._extract(key_material))
+        return self._expand(key_material)
 
     def verify(self, key_material, expected_key):
         if not constant_time.bytes_eq(self.derive(key_material), expected_key):

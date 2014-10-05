@@ -18,7 +18,8 @@ import abc
 import six
 
 
-class CipherBackend(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class CipherBackend(object):
     @abc.abstractmethod
     def cipher_supported(self, cipher, mode):
         """
@@ -38,7 +39,8 @@ class CipherBackend(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class HashBackend(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class HashBackend(object):
     @abc.abstractmethod
     def hash_supported(self, algorithm):
         """
@@ -52,7 +54,8 @@ class HashBackend(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class HMACBackend(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class HMACBackend(object):
     @abc.abstractmethod
     def hmac_supported(self, algorithm):
         """
@@ -67,7 +70,23 @@ class HMACBackend(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class PBKDF2HMACBackend(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class CMACBackend(object):
+    @abc.abstractmethod
+    def cmac_algorithm_supported(self, algorithm):
+        """
+        Returns True if the block cipher is supported for CMAC by this backend
+        """
+
+    @abc.abstractmethod
+    def create_cmac_ctx(self, algorithm):
+        """
+        Create a CMACContext for calculating a message authentication code.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class PBKDF2HMACBackend(object):
     @abc.abstractmethod
     def pbkdf2_hmac_supported(self, algorithm):
         """
@@ -83,7 +102,8 @@ class PBKDF2HMACBackend(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class RSABackend(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class RSABackend(object):
     @abc.abstractmethod
     def generate_rsa_private_key(self, public_exponent, key_size):
         """
@@ -92,31 +112,150 @@ class RSABackend(six.with_metaclass(abc.ABCMeta)):
         """
 
     @abc.abstractmethod
-    def create_rsa_signature_ctx(self, private_key, padding, algorithm):
+    def rsa_padding_supported(self, padding):
         """
-        Returns an object conforming to the AsymmetricSignatureContext
-        interface.
-        """
-
-    @abc.abstractmethod
-    def create_rsa_verification_ctx(self, public_key, signature, padding,
-                                    algorithm):
-        """
-        Returns an object conforming to the AsymmetricVerificationContext
-        interface.
+        Returns True if the backend supports the given padding options.
         """
 
     @abc.abstractmethod
-    def mgf1_hash_supported(self, algorithm):
+    def generate_rsa_parameters_supported(self, public_exponent, key_size):
         """
-        Return True if the hash algorithm is supported for MGF1 in PSS.
+        Returns True if the backend supports the given parameters for key
+        generation.
         """
 
-
-class OpenSSLSerializationBackend(six.with_metaclass(abc.ABCMeta)):
     @abc.abstractmethod
-    def load_openssl_pem_private_key(self, data, password):
+    def load_rsa_private_numbers(self, numbers):
+        """
+        Returns an RSAPrivateKey provider.
+        """
+
+    @abc.abstractmethod
+    def load_rsa_public_numbers(self, numbers):
+        """
+        Returns an RSAPublicKey provider.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class DSABackend(object):
+    @abc.abstractmethod
+    def generate_dsa_parameters(self, key_size):
+        """
+        Generate a DSAParameters instance with a modulus of key_size bits.
+        """
+
+    @abc.abstractmethod
+    def generate_dsa_private_key(self, parameters):
+        """
+        Generate a DSAPrivateKey instance with parameters as a DSAParameters
+        object.
+        """
+
+    @abc.abstractmethod
+    def generate_dsa_private_key_and_parameters(self, key_size):
+        """
+        Generate a DSAPrivateKey instance using key size only.
+        """
+
+    @abc.abstractmethod
+    def dsa_hash_supported(self, algorithm):
+        """
+        Return True if the hash algorithm is supported by the backend for DSA.
+        """
+
+    @abc.abstractmethod
+    def dsa_parameters_supported(self, p, q, g):
+        """
+        Return True if the parameters are supported by the backend for DSA.
+        """
+
+    @abc.abstractmethod
+    def load_dsa_private_numbers(self, numbers):
+        """
+        Returns a DSAPrivateKey provider.
+        """
+
+    @abc.abstractmethod
+    def load_dsa_public_numbers(self, numbers):
+        """
+        Returns a DSAPublicKey provider.
+        """
+
+    @abc.abstractmethod
+    def load_dsa_parameter_numbers(self, numbers):
+        """
+        Returns a DSAParameters provider.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class EllipticCurveBackend(object):
+    @abc.abstractmethod
+    def elliptic_curve_signature_algorithm_supported(
+        self, signature_algorithm, curve
+    ):
+        """
+        Returns True if the backend supports the named elliptic curve with the
+        specified signature algorithm.
+        """
+
+    @abc.abstractmethod
+    def elliptic_curve_supported(self, curve):
+        """
+        Returns True if the backend supports the named elliptic curve.
+        """
+
+    @abc.abstractmethod
+    def generate_elliptic_curve_private_key(self, curve):
+        """
+        Return an object conforming to the EllipticCurvePrivateKey interface.
+        """
+
+    @abc.abstractmethod
+    def load_elliptic_curve_public_numbers(self, numbers):
+        """
+        Return an EllipticCurvePublicKey provider using the given numbers.
+        """
+
+    @abc.abstractmethod
+    def load_elliptic_curve_private_numbers(self, numbers):
+        """
+        Return an EllipticCurvePublicKey provider using the given numbers.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class PEMSerializationBackend(object):
+    @abc.abstractmethod
+    def load_pem_private_key(self, data, password):
+        """
+        Loads a private key from PEM encoded data, using the provided password
+        if the data is encrypted.
+        """
+
+    @abc.abstractmethod
+    def load_pem_public_key(self, data):
+        """
+        Loads a public key from PEM encoded data.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class TraditionalOpenSSLSerializationBackend(object):
+    @abc.abstractmethod
+    def load_traditional_openssl_pem_private_key(self, data, password):
         """
         Load a private key from PEM encoded data, using password if the data
+        is encrypted.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class PKCS8SerializationBackend(object):
+    @abc.abstractmethod
+    def load_pkcs8_pem_private_key(self, data, password):
+        """
+        Load a private key from PKCS8 encoded data, using password if the data
         is encrypted.
         """

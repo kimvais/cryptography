@@ -13,43 +13,42 @@
 
 from __future__ import absolute_import, division, print_function
 
+import hmac
+import os
+import sys
+
 import cffi
 
-import six
+from cryptography.hazmat.bindings.utils import _create_modulename
+
+
+with open(os.path.join(os.path.dirname(__file__), "src/constant_time.h")) as f:
+    TYPES = f.read()
+
+with open(os.path.join(os.path.dirname(__file__), "src/constant_time.c")) as f:
+    FUNCTIONS = f.read()
 
 
 _ffi = cffi.FFI()
-_ffi.cdef("""
-uint8_t Cryptography_constant_time_bytes_eq(uint8_t *, size_t, uint8_t *,
-                                            size_t);
-""")
+_ffi.cdef(TYPES)
 _lib = _ffi.verify(
-    """
-uint8_t Cryptography_constant_time_bytes_eq(uint8_t *a, size_t len_a,
-                                            uint8_t *b, size_t len_b) {
-    size_t i = 0;
-    uint8_t mismatch = 0;
-    if (len_a != len_b) {
-        return 0;
-    }
-    for (i = 0; i < len_a; i++) {
-        mismatch |= a[i] ^ b[i];
-    }
-
-    /* Make sure any bits set are copied to the lowest bit */
-    mismatch |= mismatch >> 4;
-    mismatch |= mismatch >> 2;
-    mismatch |= mismatch >> 1;
-    /* Now check the low bit to see if it's set */
-    return (mismatch & 1) == 0;
-}
-""",
+    source=FUNCTIONS,
+    modulename=_create_modulename([TYPES], FUNCTIONS, sys.version),
     ext_package="cryptography",
 )
 
+if hasattr(hmac, "compare_digest"):
+    def bytes_eq(a, b):
+        if not isinstance(a, bytes) or not isinstance(b, bytes):
+            raise TypeError("a and b must be bytes.")
 
-def bytes_eq(a, b):
-    if isinstance(a, six.text_type) or isinstance(b, six.text_type):
-        raise TypeError("Unicode-objects must be encoded before comparing")
+        return hmac.compare_digest(a, b)
 
-    return _lib.Cryptography_constant_time_bytes_eq(a, len(a), b, len(b)) == 1
+else:
+    def bytes_eq(a, b):
+        if not isinstance(a, bytes) or not isinstance(b, bytes):
+            raise TypeError("a and b must be bytes.")
+
+        return _lib.Cryptography_constant_time_bytes_eq(
+            a, len(a), b, len(b)
+        ) == 1

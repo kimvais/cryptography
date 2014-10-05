@@ -137,3 +137,77 @@ class TestTripleDESModeCFB(object):
         ),
         lambda iv, **kwargs: modes.CFB(binascii.unhexlify(iv)),
     )
+
+
+@pytest.mark.supported(
+    only_if=lambda backend: backend.cipher_supported(
+        algorithms.TripleDES("\x00" * 8), modes.CFB8("\x00" * 8)
+    ),
+    skip_message="Does not support TripleDES CFB8",
+)
+@pytest.mark.cipher
+class TestTripleDESModeCFB8(object):
+    test_KAT = generate_encrypt_test(
+        load_nist_vectors,
+        os.path.join("ciphers", "3DES", "CFB"),
+        [
+            "TCFB8invperm.rsp",
+            "TCFB8permop.rsp",
+            "TCFB8subtab.rsp",
+            "TCFB8varkey.rsp",
+            "TCFB8vartext.rsp",
+        ],
+        lambda keys, **kwargs: algorithms.TripleDES(binascii.unhexlify(keys)),
+        lambda iv, **kwargs: modes.CFB8(binascii.unhexlify(iv)),
+    )
+
+    test_MMT = generate_encrypt_test(
+        load_nist_vectors,
+        os.path.join("ciphers", "3DES", "CFB"),
+        [
+            "TCFB8MMT1.rsp",
+            "TCFB8MMT2.rsp",
+            "TCFB8MMT3.rsp",
+        ],
+        lambda key1, key2, key3, **kwargs: algorithms.TripleDES(
+            binascii.unhexlify(key1 + key2 + key3)
+        ),
+        lambda iv, **kwargs: modes.CFB8(binascii.unhexlify(iv)),
+    )
+
+
+@pytest.mark.supported(
+    only_if=lambda backend: backend.cipher_supported(
+        algorithms.TripleDES("\x00" * 8), modes.ECB()
+    ),
+    skip_message="Does not support TripleDES ECB",
+)
+@pytest.mark.cipher
+class TestTripleDESModeECB(object):
+    test_KAT = generate_encrypt_test(
+        load_nist_vectors,
+        os.path.join("ciphers", "3DES", "ECB"),
+        [
+            "TECBinvperm.rsp",
+            "TECBpermop.rsp",
+            "TECBsubtab.rsp",
+            "TECBvarkey.rsp",
+            "TECBvartext.rsp",
+        ],
+        lambda keys, **kwargs: algorithms.TripleDES(binascii.unhexlify(keys)),
+        lambda **kwargs: modes.ECB(),
+    )
+
+    test_MMT = generate_encrypt_test(
+        load_nist_vectors,
+        os.path.join("ciphers", "3DES", "ECB"),
+        [
+            "TECBMMT1.rsp",
+            "TECBMMT2.rsp",
+            "TECBMMT3.rsp",
+        ],
+        lambda key1, key2, key3, **kwargs: algorithms.TripleDES(
+            binascii.unhexlify(key1 + key2 + key3)
+        ),
+        lambda **kwargs: modes.ECB(),
+    )

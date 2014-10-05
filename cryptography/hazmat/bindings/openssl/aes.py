@@ -38,10 +38,18 @@ int AES_wrap_key(AES_KEY *, const unsigned char *, unsigned char *,
                  const unsigned char *, unsigned int);
 int AES_unwrap_key(AES_KEY *, const unsigned char *, unsigned char *,
                    const unsigned char *, unsigned int);
+
+/* The ctr128_encrypt function is only useful in 0.9.8. You should use EVP for
+   this in 1.0.0+. It is defined in macros because the function signature
+   changed after 0.9.8 */
+void AES_ctr128_encrypt(const unsigned char *, unsigned char *,
+                        const size_t, const AES_KEY *,
+                        unsigned char[], unsigned char[], unsigned int *);
+
 """
 
 CUSTOMIZATIONS = """
-// OpenSSL 0.9.8h+
+/* OpenSSL 0.9.8h+ */
 #if OPENSSL_VERSION_NUMBER >= 0x0090808fL
 static const long Cryptography_HAS_AES_WRAP = 1;
 #else

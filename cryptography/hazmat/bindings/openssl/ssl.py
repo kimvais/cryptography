@@ -15,6 +15,8 @@ from __future__ import absolute_import, division, print_function
 
 INCLUDES = """
 #include <openssl/ssl.h>
+
+typedef STACK_OF(SSL_CIPHER) Cryptography_STACK_OF_SSL_CIPHER;
 """
 
 TYPES = """
@@ -24,6 +26,7 @@ TYPES = """
 static const long Cryptography_HAS_SSL2;
 static const long Cryptography_HAS_TLSv1_1;
 static const long Cryptography_HAS_TLSv1_2;
+static const long Cryptography_HAS_SECURE_RENEGOTIATION;
 
 /* Internally invented symbol to tell us if SNI is supported */
 static const long Cryptography_HAS_TLSEXT_HOSTNAME;
@@ -41,6 +44,9 @@ static const long Cryptography_HAS_OP_NO_COMPRESSION;
 static const long Cryptography_HAS_SSL_OP_MSIE_SSLV2_RSA_PADDING;
 static const long Cryptography_HAS_SSL_SET_SSL_CTX;
 static const long Cryptography_HAS_SSL_OP_NO_TICKET;
+static const long Cryptography_HAS_NETBSD_D1_METH;
+static const long Cryptography_HAS_NEXTPROTONEG;
+static const long Cryptography_HAS_ALPN;
 
 static const long SSL_FILETYPE_PEM;
 static const long SSL_FILETYPE_ASN1;
@@ -82,6 +88,8 @@ static const long SSL_OP_COOKIE_EXCHANGE;
 static const long SSL_OP_NO_TICKET;
 static const long SSL_OP_ALL;
 static const long SSL_OP_SINGLE_ECDH_USE;
+static const long SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION;
+static const long SSL_OP_LEGACY_SERVER_CONNECT;
 static const long SSL_VERIFY_PEER;
 static const long SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
 static const long SSL_VERIFY_CLIENT_ONCE;
@@ -119,14 +127,10 @@ static const long SSL_MODE_ENABLE_PARTIAL_WRITE;
 static const long SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER;
 static const long SSL_MODE_AUTO_RETRY;
 static const long SSL3_RANDOM_SIZE;
-typedef ... X509_STORE_CTX;
-static const long X509_V_OK;
-static const long X509_V_ERR_APPLICATION_VERIFICATION;
 typedef ... SSL_METHOD;
 typedef struct ssl_st {
     int version;
     int type;
-    const SSL_METHOD *method;
     ...;
 } SSL_CTX;
 
@@ -152,6 +156,8 @@ typedef struct {
 static const long TLSEXT_NAMETYPE_host_name;
 
 typedef ... SSL_CIPHER;
+typedef ... Cryptography_STACK_OF_SSL_CIPHER;
+typedef ... COMP_METHOD;
 """
 
 FUNCTIONS = """
@@ -159,6 +165,7 @@ void SSL_load_error_strings(void);
 int SSL_library_init(void);
 
 /*  SSL */
+const char *SSL_state_string_long(const SSL *);
 SSL_SESSION *SSL_get1_session(SSL *);
 int SSL_set_session(SSL *, SSL_SESSION *);
 int SSL_get_verify_mode(const SSL *);
@@ -179,6 +186,7 @@ int SSL_pending(const SSL *);
 int SSL_write(SSL *, const void *, int);
 int SSL_read(SSL *, void *, int);
 X509 *SSL_get_peer_certificate(const SSL *);
+int SSL_get_ex_data_X509_STORE_CTX_idx(void);
 
 Cryptography_STACK_OF_X509 *SSL_get_peer_cert_chain(const SSL *);
 Cryptography_STACK_OF_X509_NAME *SSL_get_client_CA_list(const SSL *);
@@ -187,6 +195,11 @@ int SSL_get_error(const SSL *, int);
 int SSL_do_handshake(SSL *);
 int SSL_shutdown(SSL *);
 const char *SSL_get_cipher_list(const SSL *, int);
+Cryptography_STACK_OF_SSL_CIPHER *SSL_get_ciphers(const SSL *);
+
+const COMP_METHOD *SSL_get_current_compression(SSL *);
+const COMP_METHOD *SSL_get_current_expansion(SSL *);
+const char *SSL_COMP_get_name(const COMP_METHOD *);
 
 /*  context */
 void SSL_CTX_free(SSL_CTX *);
@@ -212,13 +225,6 @@ int SSL_CTX_add_client_CA(SSL_CTX *, X509 *);
 
 void SSL_CTX_set_client_CA_list(SSL_CTX *, Cryptography_STACK_OF_X509_NAME *);
 
-
-/*  X509_STORE_CTX */
-int X509_STORE_CTX_get_error(X509_STORE_CTX *);
-void X509_STORE_CTX_set_error(X509_STORE_CTX *, int);
-int X509_STORE_CTX_get_error_depth(X509_STORE_CTX *);
-X509 *X509_STORE_CTX_get_current_cert(X509_STORE_CTX *);
-
 /*  SSL_SESSION */
 void SSL_SESSION_free(SSL_SESSION *);
 
@@ -232,26 +238,29 @@ size_t SSL_get_peer_finished(const SSL *, void *, size_t);
 """
 
 MACROS = """
-long SSL_set_mode(SSL *, long);
-long SSL_get_mode(SSL *);
+unsigned long SSL_set_mode(SSL *, unsigned long);
+unsigned long SSL_get_mode(SSL *);
 
-long SSL_set_options(SSL *, long);
-long SSL_get_options(SSL *);
+unsigned long SSL_set_options(SSL *, unsigned long);
+unsigned long SSL_get_options(SSL *);
 
 int SSL_want_read(const SSL *);
 int SSL_want_write(const SSL *);
 
 long SSL_total_renegotiations(SSL *);
+long SSL_get_secure_renegotiation_support(SSL *);
 
-long SSL_CTX_set_options(SSL_CTX *, long);
-long SSL_CTX_get_options(SSL_CTX *);
-long SSL_CTX_set_mode(SSL_CTX *, long);
-long SSL_CTX_get_mode(SSL_CTX *);
-long SSL_CTX_set_session_cache_mode(SSL_CTX *, long);
-long SSL_CTX_get_session_cache_mode(SSL_CTX *);
-long SSL_CTX_set_tmp_dh(SSL_CTX *, DH *);
-long SSL_CTX_set_tmp_ecdh(SSL_CTX *, EC_KEY *);
-long SSL_CTX_add_extra_chain_cert(SSL_CTX *, X509 *);
+/* Defined as unsigned long because SSL_OP_ALL is greater than signed 32-bit
+   and Windows defines long as 32-bit. */
+unsigned long SSL_CTX_set_options(SSL_CTX *, unsigned long);
+unsigned long SSL_CTX_get_options(SSL_CTX *);
+unsigned long SSL_CTX_set_mode(SSL_CTX *, unsigned long);
+unsigned long SSL_CTX_get_mode(SSL_CTX *);
+unsigned long SSL_CTX_set_session_cache_mode(SSL_CTX *, unsigned long);
+unsigned long SSL_CTX_get_session_cache_mode(SSL_CTX *);
+unsigned long SSL_CTX_set_tmp_dh(SSL_CTX *, DH *);
+unsigned long SSL_CTX_set_tmp_ecdh(SSL_CTX *, EC_KEY *);
+unsigned long SSL_CTX_add_extra_chain_cert(SSL_CTX *, X509 *);
 
 /*- These aren't macros these functions are all const X on openssl > 1.0.x -*/
 
@@ -318,9 +327,63 @@ void (*SSL_CTX_get_info_callback(SSL_CTX *))(const SSL *, int, int);
 /* This function does not exist in 0.9.8e. Once we drop support for
    RHEL/CentOS 5 this can be moved back to FUNCTIONS. */
 SSL_CTX *SSL_set_SSL_CTX(SSL *, SSL_CTX *);
+
+const SSL_METHOD* Cryptography_SSL_CTX_get_method(const SSL_CTX*);
+
+/* NPN APIs were introduced in OpenSSL 1.0.1.  To continue to support earlier
+ * versions some special handling of these is necessary.
+ */
+void SSL_CTX_set_next_protos_advertised_cb(SSL_CTX *,
+                                           int (*)(SSL *,
+                                                   const unsigned char **,
+                                                   unsigned int *,
+                                                   void *),
+                                           void *);
+void SSL_CTX_set_next_proto_select_cb(SSL_CTX *,
+                                      int (*)(SSL *,
+                                              unsigned char **,
+                                              unsigned char *,
+                                              const unsigned char *,
+                                              unsigned int,
+                                              void *),
+                                      void *);
+int SSL_select_next_proto(unsigned char **, unsigned char *,
+                          const unsigned char *, unsigned int,
+                          const unsigned char *, unsigned int);
+void SSL_get0_next_proto_negotiated(const SSL *,
+                                    const unsigned char **, unsigned *);
+
+int sk_SSL_CIPHER_num(Cryptography_STACK_OF_SSL_CIPHER *);
+SSL_CIPHER *sk_SSL_CIPHER_value(Cryptography_STACK_OF_SSL_CIPHER *, int);
+
+/* ALPN APIs were introduced in OpenSSL 1.0.2.  To continue to support earlier
+ * versions some special handling of these is necessary.
+ */
+int SSL_CTX_set_alpn_protos(SSL_CTX *, const unsigned char*, unsigned);
+int SSL_set_alpn_protos(SSL *, const unsigned char*, unsigned);
+void SSL_CTX_set_alpn_select_cb(SSL_CTX *,
+                                int (*) (SSL *,
+                                         const unsigned char **,
+                                         unsigned char *,
+                                         const unsigned char *,
+                                         unsigned int,
+                                         void *),
+                                void *);
+void SSL_get0_alpn_selected(const SSL *, const unsigned char **, unsigned *);
 """
 
 CUSTOMIZATIONS = """
+/** Secure renegotiation is supported in OpenSSL >= 0.9.8m
+ *  But some Linux distributions have back ported some features.
+ */
+#ifndef SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION
+static const long Cryptography_HAS_SECURE_RENEGOTIATION = 0;
+long (*SSL_get_secure_renegotiation_support)(SSL *) = NULL;
+const long SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION = 0;
+const long SSL_OP_LEGACY_SERVER_CONNECT = 0;
+#else
+static const long Cryptography_HAS_SECURE_RENEGOTIATION = 1;
+#endif
 #ifdef OPENSSL_NO_SSL2
 static const long Cryptography_HAS_SSL2 = 0;
 SSL_METHOD* (*SSLv2_method)(void) = NULL;
@@ -393,13 +456,89 @@ static const long Cryptography_HAS_SSL_OP_NO_TICKET = 0;
 const long SSL_OP_NO_TICKET = 0;
 #endif
 
-// OpenSSL 0.9.8f+
+/* OpenSSL 0.9.8f+ */
 #if OPENSSL_VERSION_NUMBER >= 0x00908070L
 static const long Cryptography_HAS_SSL_SET_SSL_CTX = 1;
 #else
 static const long Cryptography_HAS_SSL_SET_SSL_CTX = 0;
 static const long TLSEXT_NAMETYPE_host_name = 0;
 SSL_CTX *(*SSL_set_SSL_CTX)(SSL *, SSL_CTX *) = NULL;
+#endif
+
+/* NetBSD shipped without including d1_meth.c. This workaround checks to see
+   if the version of NetBSD we're currently running on is old enough to
+   have the bug and provides an empty implementation so we can link and
+   then remove the function from the ffi object. */
+#ifdef __NetBSD__
+#  include <sys/param.h>
+#  if (__NetBSD_Version__ < 699003800)
+static const long Cryptography_HAS_NETBSD_D1_METH = 0;
+const SSL_METHOD *DTLSv1_method(void) {
+    return NULL;
+}
+#  else
+static const long Cryptography_HAS_NETBSD_D1_METH = 1;
+#  endif
+#else
+static const long Cryptography_HAS_NETBSD_D1_METH = 1;
+#endif
+
+/* Workaround for #794 caused by cffi const** bug. */
+const SSL_METHOD* Cryptography_SSL_CTX_get_method(const SSL_CTX* ctx) {
+    return ctx->method;
+}
+
+/* Because OPENSSL defines macros that claim lack of support for things, rather
+ * than macros that claim support for things, we need to do a version check in
+ * addition to a definition check. NPN was added in 1.0.1: for any version
+ * before that, there is no compatibility.
+ */
+#if defined(OPENSSL_NO_NEXTPROTONEG) || OPENSSL_VERSION_NUMBER < 0x1000100fL
+static const long Cryptography_HAS_NEXTPROTONEG = 0;
+void (*SSL_CTX_set_next_protos_advertised_cb)(SSL_CTX *,
+                                              int (*)(SSL *,
+                                                      const unsigned char **,
+                                                      unsigned int *,
+                                                      void *),
+                                              void *) = NULL;
+void (*SSL_CTX_set_next_proto_select_cb)(SSL_CTX *,
+                                         int (*)(SSL *,
+                                                 unsigned char **,
+                                                 unsigned char *,
+                                                 const unsigned char *,
+                                                 unsigned int,
+                                                 void *),
+                                         void *) = NULL;
+int (*SSL_select_next_proto)(unsigned char **, unsigned char *,
+                             const unsigned char *, unsigned int,
+                             const unsigned char *, unsigned int) = NULL;
+void (*SSL_get0_next_proto_negotiated)(const SSL *,
+                                       const unsigned char **,
+                                       unsigned *) = NULL;
+#else
+static const long Cryptography_HAS_NEXTPROTONEG = 1;
+#endif
+
+/* ALPN was added in OpenSSL 1.0.2. */
+#if OPENSSL_VERSION_NUMBER < 0x10002001L
+int (*SSL_CTX_set_alpn_protos)(SSL_CTX *,
+                               const unsigned char*,
+                               unsigned) = NULL;
+int (*SSL_set_alpn_protos)(SSL *, const unsigned char*, unsigned) = NULL;
+void (*SSL_CTX_set_alpn_select_cb)(SSL_CTX *,
+                                   int (*) (SSL *,
+                                            const unsigned char **,
+                                            unsigned char *,
+                                            const unsigned char *,
+                                            unsigned int,
+                                            void *),
+                                   void *) = NULL;
+void (*SSL_get0_alpn_selected)(const SSL *,
+                               const unsigned char **,
+                               unsigned *) = NULL;
+static const long Cryptography_HAS_ALPN = 0;
+#else
+static const long Cryptography_HAS_ALPN = 1;
 #endif
 """
 
@@ -454,4 +593,28 @@ CONDITIONAL_NAMES = {
         "SSL_set_SSL_CTX",
         "TLSEXT_NAMETYPE_host_name",
     ],
+
+    "Cryptography_HAS_NETBSD_D1_METH": [
+        "DTLSv1_method",
+    ],
+
+    "Cryptography_HAS_NEXTPROTONEG": [
+        "SSL_CTX_set_next_protos_advertised_cb",
+        "SSL_CTX_set_next_proto_select_cb",
+        "SSL_select_next_proto",
+        "SSL_get0_next_proto_negotiated",
+    ],
+
+    "Cryptography_HAS_SECURE_RENEGOTIATION": [
+        "SSL_OP_ALLOW_UNSAFE_LEGACY_RENEGOTIATION",
+        "SSL_OP_LEGACY_SERVER_CONNECT",
+        "SSL_get_secure_renegotiation_support",
+    ],
+
+    "Cryptography_HAS_ALPN": [
+        "SSL_CTX_set_alpn_protos",
+        "SSL_set_alpn_protos",
+        "SSL_CTX_set_alpn_select_cb",
+        "SSL_get0_alpn_selected",
+    ]
 }

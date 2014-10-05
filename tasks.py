@@ -10,6 +10,7 @@
 # implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from __future__ import absolute_import, division, print_function
 
 import getpass
@@ -24,9 +25,9 @@ import requests
 JENKINS_URL = "https://jenkins.cryptography.io/job/cryptography-wheel-builder"
 
 
-def wait_for_build_completed():
+def wait_for_build_completed(session):
     while True:
-        response = requests.get(
+        response = session.get(
             "{0}/lastBuild/api/json/".format(JENKINS_URL),
             headers={
                 "Accept": "application/json",
@@ -39,8 +40,8 @@ def wait_for_build_completed():
         time.sleep(0.1)
 
 
-def download_artifacts():
-    response = requests.get(
+def download_artifacts(session):
+    response = session.get(
         "{0}/lastBuild/api/json/".format(JENKINS_URL),
         headers={
             "Accept": "application/json"
@@ -53,7 +54,7 @@ def download_artifacts():
     paths = []
 
     for run in response.json()["runs"]:
-        response = requests.get(
+        response = session.get(
             run["url"] + "api/json/",
             headers={
                 "Accept": "application/json",
@@ -61,8 +62,8 @@ def download_artifacts():
         )
         response.raise_for_status()
         for artifact in response.json()["artifacts"]:
-            response = requests.get(
-                "{0}artifacts/{1}".format(run["url"], artifact["relativePath"])
+            response = session.get(
+                "{0}artifact/{1}".format(run["url"], artifact["relativePath"])
             )
             out_path = os.path.join(
                 os.path.dirname(__file__),
@@ -80,21 +81,39 @@ def release(version):
     """
     ``version`` should be a string like '0.4' or '1.0'.
     """
-    invoke.run("git tag -s {0}".format(version))
+    invoke.run("git tag -s {0} -m '{0} release'".format(version))
     invoke.run("git push --tags")
 
     invoke.run("python setup.py sdist")
-    invoke.run("twine upload -s dist/cryptography-{0}*".format(version))
+    invoke.run("cd vectors/ && python setup.py sdist bdist_wheel")
 
+    invoke.run(
+        "twine upload -s dist/cryptography-{0}* "
+        "vectors/dist/cryptography_vectors-{0}*".format(version)
+    )
+
+    session = requests.Session()
+
+    # This tells the CDN to delete the cached response for the URL. We do this
+    # so that the Jenkins builders will see the new sdist immediately when they
+    # go to build the wheels.
+    response = session.request(
+        "PURGE", "https://pypi.python.org/simple/cryptography/"
+    )
+    response.raise_for_status()
+
+    username = getpass.getpass("Input the GitHub/Jenkins username: ")
     token = getpass.getpass("Input the Jenkins token: ")
-    response = requests.post(
+    response = session.post(
         "{0}/build".format(JENKINS_URL),
+        auth=requests.auth.HTTPBasicAuth(
+            username, token
+        ),
         params={
-            "token": token,
             "cause": "Building wheels for {0}".format(version)
         }
     )
     response.raise_for_status()
-    wait_for_build_completed()
-    paths = download_artifacts()
+    wait_for_build_completed(session)
+    paths = download_artifacts(session)
     invoke.run("twine upload {0}".format(" ".join(paths)))

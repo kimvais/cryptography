@@ -14,20 +14,21 @@
 from __future__ import absolute_import, division, print_function
 
 
+class _Reasons(object):
+    BACKEND_MISSING_INTERFACE = object()
+    UNSUPPORTED_HASH = object()
+    UNSUPPORTED_CIPHER = object()
+    UNSUPPORTED_PADDING = object()
+    UNSUPPORTED_MGF = object()
+    UNSUPPORTED_PUBLIC_KEY_ALGORITHM = object()
+    UNSUPPORTED_ELLIPTIC_CURVE = object()
+    UNSUPPORTED_SERIALIZATION = object()
+
+
 class UnsupportedAlgorithm(Exception):
-    pass
-
-
-class UnsupportedCipher(UnsupportedAlgorithm):
-    pass
-
-
-class UnsupportedHash(UnsupportedAlgorithm):
-    pass
-
-
-class UnsupportedPadding(UnsupportedAlgorithm):
-    pass
+    def __init__(self, message, reason=None):
+        super(UnsupportedAlgorithm, self).__init__(message)
+        self._reason = reason
 
 
 class AlreadyFinalized(Exception):
@@ -59,8 +60,4 @@ class InvalidKey(Exception):
 
 
 class InvalidToken(Exception):
-    pass
-
-
-class UnsupportedInterface(Exception):
     pass

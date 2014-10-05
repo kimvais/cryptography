@@ -20,9 +20,9 @@ provides secrecy but not authenticity. That means an attacker can't see the
 message but an attacker can create bogus messages and force the application to
 decrypt them.
 
-For this reason it is *strongly* recommended to combine encryption with a
-message authentication code, such as :doc:`HMAC </hazmat/primitives/hmac>`, in
-an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
+For this reason it is **strongly** recommended to combine encryption with a
+message authentication code, such as :doc:`HMAC </hazmat/primitives/mac/hmac>`,
+in an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
 
 .. class:: Cipher(algorithm, mode, backend)
 
@@ -56,7 +56,7 @@ an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
         :class:`~cryptography.hazmat.backends.interfaces.CipherBackend`
         provider.
 
-    :raises cryptography.exceptions.UnsupportedInterface: This is raised if the
+    :raises cryptography.exceptions.UnsupportedAlgorithm: This is raised if the
         provided ``backend`` does not implement
         :class:`~cryptography.hazmat.backends.interfaces.CipherBackend`
 
@@ -67,7 +67,7 @@ an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
             provider.
 
         If the backend doesn't support the requested combination of ``cipher``
-        and ``mode`` an :class:`~cryptography.exceptions.UnsupportedCipher`
+        and ``mode`` an :class:`~cryptography.exceptions.UnsupportedAlgorithm`
         exception will be raised.
 
     .. method:: decryptor()
@@ -77,7 +77,7 @@ an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
             provider.
 
         If the backend doesn't support the requested combination of ``cipher``
-        and ``mode`` an :class:`cryptography.exceptions.UnsupportedCipher`
+        and ``mode`` an :class:`~cryptography.exceptions.UnsupportedAlgorithm`
         exception will be raised.
 
 .. _symmetric-encryption-algorithms:
@@ -130,6 +130,17 @@ Algorithms
     :param bytes key: The secret key, This must be kept secret. 40 to 128 bits
         in length in increments of 8 bits.
 
+.. class:: SEED(key)
+
+    .. versionadded:: 0.4
+
+    SEED is a block cipher developed by the Korea Information Security Agency
+    (KISA). It is defined in :rfc:`4269` and is used broadly throughout South
+    Korean industry, but rarely found elsewhere.
+
+    :param bytes key: The secret key. This must be kept secret. ``128`` bits in
+        length.
+
 Weak ciphers
 ------------
 
@@ -176,7 +187,7 @@ Weak ciphers
     is susceptible to attacks when using weak keys. It is recommended that you
     do not use this cipher for new applications.
 
-    :param bytes key: The secret key This must be kept secret. ``128`` bits in
+    :param bytes key: The secret key. This must be kept secret. ``128`` bits in
         length.
 
 
@@ -264,7 +275,20 @@ Modes
         Must be the same number of bytes as the ``block_size`` of the cipher.
         Do not reuse an ``initialization_vector`` with a given ``key``.
 
-.. class:: GCM(initialization_vector, tag=None)
+.. class:: CFB8(initialization_vector)
+
+    CFB (Cipher Feedback) is a mode of operation for block ciphers. It
+    transforms a block cipher into a stream cipher. The CFB8 variant uses an
+    8-bit shift register.
+
+    **This mode does not require padding.**
+
+    :param bytes initialization_vector: Must be random bytes. They do not need
+        to be kept secret and they can be included in a transmitted message.
+        Must be the same number of bytes as the ``block_size`` of the cipher.
+        Do not reuse an ``initialization_vector`` with a given ``key``.
+
+.. class:: GCM(initialization_vector, tag=None, min_tag_length=16)
 
     .. danger::
 
@@ -278,7 +302,7 @@ Modes
     block cipher mode that simultaneously encrypts the message as well as
     authenticating it. Additional unencrypted data may also be authenticated.
     Additional means of verifying integrity such as
-    :doc:`HMAC </hazmat/primitives/hmac>` are not necessary.
+    :doc:`HMAC </hazmat/primitives/mac/hmac>` are not necessary.
 
     **This mode does not require padding.**
 
@@ -294,12 +318,22 @@ Modes
         You can shorten a tag by truncating it to the desired length but this
         is **not recommended** as it lowers the security margins of the
         authentication (`NIST SP-800-38D`_ recommends 96-bits or greater).
-        If you must shorten the tag the minimum allowed length is 4 bytes
-        (32-bits). Applications **must** verify the tag is the expected length
-        to guarantee the expected security margin.
+        Applications wishing to allow truncation must pass the
+        ``min_tag_length`` parameter.
+
+        .. versionchanged:: 0.5
+
+            The ``min_tag_length`` parameter was added in ``0.5``, previously
+            truncation down to ``4`` bytes was always allowed.
 
     :param bytes tag: The tag bytes to verify during decryption. When
         encrypting this must be ``None``.
+
+    :param bytes min_tag_length: The minimum length ``tag`` must be. By default
+        this is ``16``, meaning tag truncation is not allowed. Allowing tag
+        truncation is strongly discouraged for most applications.
+
+    :raises ValueError: This is raised if ``len(tag) < min_tag_length``.
 
     .. testcode::
 
@@ -313,7 +347,7 @@ Modes
             # Generate a random 96-bit IV.
             iv = os.urandom(12)
 
-            # Construct a AES-GCM Cipher object with the given key and a
+            # Construct an AES-GCM Cipher object with the given key and a
             # randomly generated IV.
             encryptor = Cipher(
                 algorithms.AES(key),
@@ -332,11 +366,6 @@ Modes
             return (iv, ciphertext, encryptor.tag)
 
         def decrypt(key, associated_data, iv, ciphertext, tag):
-            if len(tag) != 16:
-                raise ValueError(
-                    "tag must be 16 bytes -- truncation not supported"
-                )
-
             # Construct a Cipher object, with the key, iv, and additionally the
             # GCM tag used for authenticating the message.
             decryptor = Cipher(
@@ -406,9 +435,9 @@ Interfaces
     make a message the correct size. ``CipherContext`` will not automatically
     apply any padding; you'll need to add your own. For block ciphers the
     recommended padding is
-    :class:`cryptography.hazmat.primitives.padding.PKCS7`. If you are using a
+    :class:`~cryptography.hazmat.primitives.padding.PKCS7`. If you are using a
     stream cipher mode (such as
-    :class:`cryptography.hazmat.primitives.modes.CTR`) you don't have to worry
+    :class:`~cryptography.hazmat.primitives.modes.CTR`) you don't have to worry
     about this.
 
     .. method:: update(data)
@@ -419,7 +448,7 @@ Interfaces
 
         When the ``Cipher`` was constructed in a mode that turns it into a
         stream cipher (e.g.
-        :class:`cryptography.hazmat.primitives.ciphers.modes.CTR`), this will
+        :class:`~cryptography.hazmat.primitives.ciphers.modes.CTR`), this will
         return bytes immediately, however in other modes it will return chunks
         whose size is determined by the cipher's block size.
 

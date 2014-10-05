@@ -18,7 +18,8 @@ import abc
 import six
 
 
-class CipherAlgorithm(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class CipherAlgorithm(object):
     @abc.abstractproperty
     def name(self):
         """
@@ -32,7 +33,8 @@ class CipherAlgorithm(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class BlockCipherAlgorithm(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class BlockCipherAlgorithm(object):
     @abc.abstractproperty
     def block_size(self):
         """
@@ -40,7 +42,8 @@ class BlockCipherAlgorithm(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class Mode(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class Mode(object):
     @abc.abstractproperty
     def name(self):
         """
@@ -55,7 +58,8 @@ class Mode(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class ModeWithInitializationVector(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class ModeWithInitializationVector(object):
     @abc.abstractproperty
     def initialization_vector(self):
         """
@@ -63,7 +67,8 @@ class ModeWithInitializationVector(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class ModeWithNonce(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class ModeWithNonce(object):
     @abc.abstractproperty
     def nonce(self):
         """
@@ -71,7 +76,8 @@ class ModeWithNonce(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class ModeWithAuthenticationTag(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class ModeWithAuthenticationTag(object):
     @abc.abstractproperty
     def tag(self):
         """
@@ -79,7 +85,8 @@ class ModeWithAuthenticationTag(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class CipherContext(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class CipherContext(object):
     @abc.abstractmethod
     def update(self, data):
         """
@@ -94,7 +101,8 @@ class CipherContext(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class AEADCipherContext(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class AEADCipherContext(object):
     @abc.abstractmethod
     def authenticate_additional_data(self, data):
         """
@@ -102,7 +110,8 @@ class AEADCipherContext(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class AEADEncryptionContext(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class AEADEncryptionContext(object):
     @abc.abstractproperty
     def tag(self):
         """
@@ -111,7 +120,8 @@ class AEADEncryptionContext(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class PaddingContext(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class PaddingContext(object):
     @abc.abstractmethod
     def update(self, data):
         """
@@ -125,7 +135,8 @@ class PaddingContext(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class HashAlgorithm(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class HashAlgorithm(object):
     @abc.abstractproperty
     def name(self):
         """
@@ -145,7 +156,8 @@ class HashAlgorithm(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class HashContext(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class HashContext(object):
     @abc.abstractproperty
     def algorithm(self):
         """
@@ -171,23 +183,18 @@ class HashContext(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class RSAPrivateKey(six.with_metaclass(abc.ABCMeta)):
-    @abc.abstractproperty
-    def modulus(self):
+@six.add_metaclass(abc.ABCMeta)
+class RSAPrivateKey(object):
+    @abc.abstractmethod
+    def signer(self, padding, algorithm):
         """
-        The public modulus of the RSA key.
-        """
-
-    @abc.abstractproperty
-    def public_exponent(self):
-        """
-        The public exponent of the RSA key.
+        Returns an AsymmetricSignatureContext used for signing data.
         """
 
-    @abc.abstractproperty
-    def private_exponent(self):
+    @abc.abstractmethod
+    def decrypt(self, ciphertext, padding):
         """
-        The private exponent of the RSA key.
+        Decrypts the provided ciphertext.
         """
 
     @abc.abstractproperty
@@ -202,70 +209,28 @@ class RSAPrivateKey(six.with_metaclass(abc.ABCMeta)):
         The RSAPublicKey associated with this private key.
         """
 
-    @abc.abstractproperty
-    def n(self):
-        """
-        The public modulus of the RSA key. Alias for modulus.
-        """
 
-    @abc.abstractproperty
-    def p(self):
+@six.add_metaclass(abc.ABCMeta)
+class RSAPrivateKeyWithNumbers(RSAPrivateKey):
+    @abc.abstractmethod
+    def private_numbers(self):
         """
-        One of the two primes used to generate d.
-        """
-
-    @abc.abstractproperty
-    def q(self):
-        """
-        One of the two primes used to generate d.
-        """
-
-    @abc.abstractproperty
-    def d(self):
-        """
-        The private exponent. This can be calculated using p and q. Alias for
-        private_exponent.
-        """
-
-    @abc.abstractproperty
-    def dmp1(self):
-        """
-        A Chinese remainder theorem coefficient used to speed up RSA
-        calculations.  Calculated as: d mod (p-1)
-        """
-
-    @abc.abstractproperty
-    def dmq1(self):
-        """
-        A Chinese remainder theorem coefficient used to speed up RSA
-        calculations.  Calculated as: d mod (q-1)
-        """
-
-    @abc.abstractproperty
-    def iqmp(self):
-        """
-        A Chinese remainder theorem coefficient used to speed up RSA
-        calculations. The modular inverse of q modulo p
-        """
-
-    @abc.abstractproperty
-    def e(self):
-        """
-        The public exponent of the RSA key. Alias for public_exponent.
+        Returns an RSAPrivateNumbers.
         """
 
 
-class RSAPublicKey(six.with_metaclass(abc.ABCMeta)):
-    @abc.abstractproperty
-    def modulus(self):
+@six.add_metaclass(abc.ABCMeta)
+class RSAPublicKey(object):
+    @abc.abstractmethod
+    def verifier(self, signature, padding, algorithm):
         """
-        The public modulus of the RSA key.
+        Returns an AsymmetricVerificationContext used for verifying signatures.
         """
 
-    @abc.abstractproperty
-    def public_exponent(self):
+    @abc.abstractmethod
+    def encrypt(self, plaintext, padding):
         """
-        The public exponent of the RSA key.
+        Encrypts the given plaintext.
         """
 
     @abc.abstractproperty
@@ -274,66 +239,36 @@ class RSAPublicKey(six.with_metaclass(abc.ABCMeta)):
         The bit length of the public modulus.
         """
 
-    @abc.abstractproperty
-    def n(self):
-        """
-        The public modulus of the RSA key. Alias for modulus.
-        """
 
-    @abc.abstractproperty
-    def e(self):
+@six.add_metaclass(abc.ABCMeta)
+class RSAPublicKeyWithNumbers(RSAPublicKey):
+    @abc.abstractmethod
+    def public_numbers(self):
         """
-        The public exponent of the RSA key. Alias for public_exponent.
+        Returns an RSAPublicNumbers
         """
 
 
-class DSAParameters(six.with_metaclass(abc.ABCMeta)):
-    @abc.abstractproperty
-    def modulus(self):
+@six.add_metaclass(abc.ABCMeta)
+class DSAParameters(object):
+    @abc.abstractmethod
+    def generate_private_key(self):
         """
-        The prime modulus that's used in generating the DSA keypair and used
-        in the DSA signing and verification processes.
-        """
-
-    @abc.abstractproperty
-    def subgroup_order(self):
-        """
-        The subgroup order that's used in generating the DSA keypair
-        by the generator and used in the DSA signing and verification
-        processes.
-        """
-
-    @abc.abstractproperty
-    def generator(self):
-        """
-        The generator that is used in generating the DSA keypair and used
-        in the DSA signing and verification processes.
-        """
-
-    @abc.abstractproperty
-    def p(self):
-        """
-        The prime modulus that's used in generating the DSA keypair and used
-        in the DSA signing and verification processes. Alias for modulus.
-        """
-
-    @abc.abstractproperty
-    def q(self):
-        """
-        The subgroup order that's used in generating the DSA keypair
-        by the generator and used in the DSA signing and verification
-        processes. Alias for subgroup_order.
-        """
-
-    @abc.abstractproperty
-    def g(self):
-        """
-        The generator that is used in generating the DSA keypair and used
-        in the DSA signing and verification processes. Alias for generator.
+        Generates and returns a DSAPrivateKey.
         """
 
 
-class DSAPrivateKey(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class DSAParametersWithNumbers(DSAParameters):
+    @abc.abstractmethod
+    def parameter_numbers(self):
+        """
+        Returns a DSAParameterNumbers.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class DSAPrivateKey(object):
     @abc.abstractproperty
     def key_size(self):
         """
@@ -346,18 +281,6 @@ class DSAPrivateKey(six.with_metaclass(abc.ABCMeta)):
         The DSAPublicKey associated with this private key.
         """
 
-    @abc.abstractproperty
-    def x(self):
-        """
-        The private key "x" in the DSA structure.
-        """
-
-    @abc.abstractproperty
-    def y(self):
-        """
-        The public key.
-        """
-
     @abc.abstractmethod
     def parameters(self):
         """
@@ -365,17 +288,21 @@ class DSAPrivateKey(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class DSAPublicKey(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class DSAPrivateKeyWithNumbers(DSAPrivateKey):
+    @abc.abstractmethod
+    def private_numbers(self):
+        """
+        Returns a DSAPrivateNumbers.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class DSAPublicKey(object):
     @abc.abstractproperty
     def key_size(self):
         """
         The bit length of the prime modulus.
-        """
-
-    @abc.abstractproperty
-    def y(self):
-        """
-        The public key.
         """
 
     @abc.abstractmethod
@@ -385,7 +312,17 @@ class DSAPublicKey(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class AsymmetricSignatureContext(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class DSAPublicKeyWithNumbers(DSAPublicKey):
+    @abc.abstractmethod
+    def public_numbers(self):
+        """
+        Returns a DSAPublicNumbers.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class AsymmetricSignatureContext(object):
     @abc.abstractmethod
     def update(self, data):
         """
@@ -399,7 +336,8 @@ class AsymmetricSignatureContext(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class AsymmetricVerificationContext(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class AsymmetricVerificationContext(object):
     @abc.abstractmethod
     def update(self, data):
         """
@@ -414,7 +352,8 @@ class AsymmetricVerificationContext(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class AsymmetricPadding(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class AsymmetricPadding(object):
     @abc.abstractproperty
     def name(self):
         """
@@ -422,7 +361,8 @@ class AsymmetricPadding(six.with_metaclass(abc.ABCMeta)):
         """
 
 
-class KeyDerivationFunction(six.with_metaclass(abc.ABCMeta)):
+@six.add_metaclass(abc.ABCMeta)
+class KeyDerivationFunction(object):
     @abc.abstractmethod
     def derive(self, key_material):
         """
@@ -435,4 +375,102 @@ class KeyDerivationFunction(six.with_metaclass(abc.ABCMeta)):
         """
         Checks whether the key generated by the key material matches the
         expected derived key. Raises an exception if they do not match.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class CMACContext(object):
+    @abc.abstractmethod
+    def update(self, data):
+        """
+        Processes the provided bytes.
+        """
+
+    def finalize(self):
+        """
+        Returns the message authentication code as bytes.
+        """
+
+    @abc.abstractmethod
+    def copy(self):
+        """
+        Return a CMACContext that is a copy of the current context.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class EllipticCurve(object):
+    @abc.abstractproperty
+    def name(self):
+        """
+        The name of the curve. e.g. secp256r1.
+        """
+
+    @abc.abstractproperty
+    def key_size(self):
+        """
+        The bit length of the base point of the curve.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class EllipticCurveSignatureAlgorithm(object):
+    @abc.abstractproperty
+    def algorithm(self):
+        """
+        The digest algorithm used with this signature.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class EllipticCurvePrivateKey(object):
+    @abc.abstractmethod
+    def signer(self, signature_algorithm):
+        """
+        Returns an AsymmetricSignatureContext used for signing data.
+        """
+
+    @abc.abstractmethod
+    def public_key(self):
+        """
+        The EllipticCurvePublicKey for this private key.
+        """
+
+    @abc.abstractproperty
+    def curve(self):
+        """
+        The EllipticCurve that this key is on.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class EllipticCurvePrivateKeyWithNumbers(EllipticCurvePrivateKey):
+    @abc.abstractmethod
+    def private_numbers(self):
+        """
+        Returns an EllipticCurvePrivateNumbers.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class EllipticCurvePublicKey(object):
+    @abc.abstractmethod
+    def verifier(self, signature, signature_algorithm):
+        """
+        Returns an AsymmetricVerificationContext used for signing data.
+        """
+
+    @abc.abstractproperty
+    def curve(self):
+        """
+        The EllipticCurve that this key is on.
+        """
+
+
+@six.add_metaclass(abc.ABCMeta)
+class EllipticCurvePublicKeyWithNumbers(EllipticCurvePublicKey):
+    @abc.abstractmethod
+    def public_numbers(self):
+        """
+        Returns an EllipticCurvePublicNumbers.
         """

@@ -13,11 +13,21 @@
 
 from __future__ import absolute_import, division, print_function
 
+import binascii
 import collections
-import os
+import re
+from contextlib import contextmanager
+
+from pyasn1.codec.der import encoder
+from pyasn1.type import namedtype, univ
+
+import pytest
 
 import six
-import pytest
+
+from cryptography.exceptions import UnsupportedAlgorithm
+
+import cryptography_vectors
 
 
 HashVector = collections.namedtuple("HashVector", ["message", "digest"])
@@ -65,11 +75,30 @@ def check_backend_support(item):
                          "backend")
 
 
-def load_vectors_from_file(filename, loader):
-    base = os.path.join(
-        os.path.dirname(__file__), "hazmat", "primitives", "vectors",
+@contextmanager
+def raises_unsupported_algorithm(reason):
+    with pytest.raises(UnsupportedAlgorithm) as exc_info:
+        yield exc_info
+
+    assert exc_info.value._reason is reason
+
+
+class _DSSSigValue(univ.Sequence):
+    componentType = namedtype.NamedTypes(
+        namedtype.NamedType('r', univ.Integer()),
+        namedtype.NamedType('s', univ.Integer())
     )
-    with open(os.path.join(base, filename), "r") as vector_file:
+
+
+def der_encode_dsa_signature(r, s):
+    sig = _DSSSigValue()
+    sig.setComponentByName('r', r)
+    sig.setComponentByName('s', s)
+    return encoder.encode(sig)
+
+
+def load_vectors_from_file(filename, loader):
+    with cryptography_vectors.open_vector_file(filename) as vector_file:
         return loader(vector_file)
 
 
@@ -190,7 +219,8 @@ def load_pkcs1_vectors(vector_data):
     for line in vector_data:
         if (
             line.startswith("# PSS Example") or
-            line.startswith("# PKCS#1 v1.5 Signature")
+            line.startswith("# OAEP Example") or
+            line.startswith("# PKCS#1 v1.5")
         ):
             if example_vector:
                 for key, value in six.iteritems(example_vector):
@@ -201,14 +231,20 @@ def load_pkcs1_vectors(vector_data):
             attr = None
             example_vector = collections.defaultdict(list)
 
-        if line.startswith("# Message to be signed"):
+        if line.startswith("# Message"):
             attr = "message"
             continue
         elif line.startswith("# Salt"):
             attr = "salt"
             continue
+        elif line.startswith("# Seed"):
+            attr = "seed"
+            continue
         elif line.startswith("# Signature"):
             attr = "signature"
+            continue
+        elif line.startswith("# Encryption"):
+            attr = "encryption"
             continue
         elif (
             example_vector and
@@ -408,5 +444,242 @@ def load_fips_dsa_key_pair_vectors(vector_data):
                                 })
             elif line.startswith("Y"):
                 vectors[-1]['y'] = int(line.split("=")[1], 16)
+
+    return vectors
+
+
+def load_fips_dsa_sig_vectors(vector_data):
+    """
+    Loads data out of the FIPS DSA SigVer vector files.
+    """
+    vectors = []
+    sha_regex = re.compile(
+        r"\[mod = L=...., N=..., SHA-(?P<sha>1|224|256|384|512)\]"
+    )
+    # When reading_key_data is set to True it tells the loader to continue
+    # constructing dictionaries. We set reading_key_data to False during the
+    # blocks of the vectors of N=224 because we don't support it.
+    reading_key_data = True
+
+    for line in vector_data:
+        line = line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        sha_match = sha_regex.match(line)
+        if sha_match:
+            digest_algorithm = "SHA-{0}".format(sha_match.group("sha"))
+
+        if line.startswith("[mod = L=2048, N=224"):
+            reading_key_data = False
+            continue
+        elif line.startswith("[mod = L=2048, N=256"):
+            reading_key_data = True
+            continue
+
+        if not reading_key_data or line.startswith("[mod"):
+            continue
+
+        name, value = [c.strip() for c in line.split("=")]
+
+        if name == "P":
+            vectors.append({'p': int(value, 16),
+                            'digest_algorithm': digest_algorithm})
+        elif name == "Q":
+            vectors[-1]['q'] = int(value, 16)
+        elif name == "G":
+            vectors[-1]['g'] = int(value, 16)
+        elif name == "Msg" and 'msg' not in vectors[-1]:
+            hexmsg = value.strip().encode("ascii")
+            vectors[-1]['msg'] = binascii.unhexlify(hexmsg)
+        elif name == "Msg" and 'msg' in vectors[-1]:
+            hexmsg = value.strip().encode("ascii")
+            vectors.append({'p': vectors[-1]['p'],
+                            'q': vectors[-1]['q'],
+                            'g': vectors[-1]['g'],
+                            'digest_algorithm':
+                            vectors[-1]['digest_algorithm'],
+                            'msg': binascii.unhexlify(hexmsg)})
+        elif name == "X":
+            vectors[-1]['x'] = int(value, 16)
+        elif name == "Y":
+            vectors[-1]['y'] = int(value, 16)
+        elif name == "R":
+            vectors[-1]['r'] = int(value, 16)
+        elif name == "S":
+            vectors[-1]['s'] = int(value, 16)
+        elif name == "Result":
+            vectors[-1]['result'] = value.split("(")[0].strip()
+
+    return vectors
+
+
+# http://tools.ietf.org/html/rfc4492#appendix-A
+_ECDSA_CURVE_NAMES = {
+    "P-192": "secp192r1",
+    "P-224": "secp224r1",
+    "P-256": "secp256r1",
+    "P-384": "secp384r1",
+    "P-521": "secp521r1",
+
+    "K-163": "sect163k1",
+    "K-233": "sect233k1",
+    "K-283": "sect283k1",
+    "K-409": "sect409k1",
+    "K-571": "sect571k1",
+
+    "B-163": "sect163r2",
+    "B-233": "sect233r1",
+    "B-283": "sect283r1",
+    "B-409": "sect409r1",
+    "B-571": "sect571r1",
+}
+
+
+def load_fips_ecdsa_key_pair_vectors(vector_data):
+    """
+    Loads data out of the FIPS ECDSA KeyPair vector files.
+    """
+    vectors = []
+    key_data = None
+    for line in vector_data:
+        line = line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        if line[1:-1] in _ECDSA_CURVE_NAMES:
+            curve_name = _ECDSA_CURVE_NAMES[line[1:-1]]
+
+        elif line.startswith("d = "):
+            if key_data is not None:
+                vectors.append(key_data)
+
+            key_data = {
+                "curve": curve_name,
+                "d": int(line.split("=")[1], 16)
+            }
+
+        elif key_data is not None:
+            if line.startswith("Qx = "):
+                key_data["x"] = int(line.split("=")[1], 16)
+            elif line.startswith("Qy = "):
+                key_data["y"] = int(line.split("=")[1], 16)
+
+    if key_data is not None:
+        vectors.append(key_data)
+
+    return vectors
+
+
+def load_fips_ecdsa_signing_vectors(vector_data):
+    """
+    Loads data out of the FIPS ECDSA SigGen vector files.
+    """
+    vectors = []
+
+    curve_rx = re.compile(
+        r"\[(?P<curve>[PKB]-[0-9]{3}),SHA-(?P<sha>1|224|256|384|512)\]"
+    )
+
+    data = None
+    for line in vector_data:
+        line = line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        curve_match = curve_rx.match(line)
+        if curve_match:
+            curve_name = _ECDSA_CURVE_NAMES[curve_match.group("curve")]
+            digest_name = "SHA-{0}".format(curve_match.group("sha"))
+
+        elif line.startswith("Msg = "):
+            if data is not None:
+                vectors.append(data)
+
+            hexmsg = line.split("=")[1].strip().encode("ascii")
+
+            data = {
+                "curve": curve_name,
+                "digest_algorithm": digest_name,
+                "message": binascii.unhexlify(hexmsg)
+            }
+
+        elif data is not None:
+            if line.startswith("Qx = "):
+                data["x"] = int(line.split("=")[1], 16)
+            elif line.startswith("Qy = "):
+                data["y"] = int(line.split("=")[1], 16)
+            elif line.startswith("R = "):
+                data["r"] = int(line.split("=")[1], 16)
+            elif line.startswith("S = "):
+                data["s"] = int(line.split("=")[1], 16)
+            elif line.startswith("d = "):
+                data["d"] = int(line.split("=")[1], 16)
+            elif line.startswith("Result = "):
+                data["fail"] = line.split("=")[1].strip()[0] == "F"
+
+    if data is not None:
+        vectors.append(data)
+    return vectors
+
+
+def load_kasvs_dh_vectors(vector_data):
+    """
+    Loads data out of the KASVS key exchange vector data
+    """
+
+    result_rx = re.compile(r"([FP]) \(([0-9]+) -")
+
+    vectors = []
+    data = {
+        "fail_z": False,
+        "fail_agree": False
+    }
+
+    for line in vector_data:
+        line = line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        if line.startswith("P = "):
+            data["p"] = int(line.split("=")[1], 16)
+        elif line.startswith("Q = "):
+            data["q"] = int(line.split("=")[1], 16)
+        elif line.startswith("G = "):
+            data["g"] = int(line.split("=")[1], 16)
+        elif line.startswith("Z = "):
+            z_hex = line.split("=")[1].strip().encode("ascii")
+            data["z"] = binascii.unhexlify(z_hex)
+        elif line.startswith("XstatCAVS = "):
+            data["x1"] = int(line.split("=")[1], 16)
+        elif line.startswith("YstatCAVS = "):
+            data["y1"] = int(line.split("=")[1], 16)
+        elif line.startswith("XstatIUT = "):
+            data["x2"] = int(line.split("=")[1], 16)
+        elif line.startswith("YstatIUT = "):
+            data["y2"] = int(line.split("=")[1], 16)
+        elif line.startswith("Result = "):
+            result_str = line.split("=")[1].strip()
+            match = result_rx.match(result_str)
+
+            if match.group(1) == "F":
+                if int(match.group(2)) in (5, 10):
+                    data["fail_z"] = True
+                else:
+                    data["fail_agree"] = True
+
+            vectors.append(data)
+
+            data = {
+                "p": data["p"],
+                "q": data["q"],
+                "g": data["g"],
+                "fail_z": False,
+                "fail_agree": False
+            }
 
     return vectors

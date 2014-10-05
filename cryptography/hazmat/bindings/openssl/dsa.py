@@ -19,18 +19,22 @@ INCLUDES = """
 
 TYPES = """
 typedef struct dsa_st {
-    // prime number (public)
+    /* Prime number (public) */
     BIGNUM *p;
-    // 160-bit subprime, q | p-1 (public)
+    /* Subprime (160-bit, q | p-1, public) */
     BIGNUM *q;
-    // generator of subgroup (public)
+    /* Generator of subgroup (public) */
     BIGNUM *g;
-    // private key x
+    /* Private key x */
     BIGNUM *priv_key;
-    // public key y = g^x
+    /* Public key y = g^x */
     BIGNUM *pub_key;
     ...;
 } DSA;
+typedef struct {
+    BIGNUM *r;
+    BIGNUM *s;
+} DSA_SIG;
 """
 
 FUNCTIONS = """
@@ -39,6 +43,15 @@ DSA *DSA_generate_parameters(int, unsigned char *, int, int *, unsigned long *,
 int DSA_generate_key(DSA *);
 DSA *DSA_new(void);
 void DSA_free(DSA *);
+DSA_SIG *DSA_SIG_new(void);
+void DSA_SIG_free(DSA_SIG *);
+int i2d_DSA_SIG(const DSA_SIG *, unsigned char **);
+DSA_SIG *d2i_DSA_SIG(DSA_SIG **, const unsigned char **, long);
+int DSA_size(const DSA *);
+int DSA_sign(int, const unsigned char *, int, unsigned char *, unsigned int *,
+             DSA *);
+int DSA_verify(int, const unsigned char *, int, const unsigned char *, int,
+               DSA *);
 """
 
 MACROS = """

@@ -13,10 +13,10 @@
 
 from __future__ import absolute_import, division, print_function
 
-import six
-
 from cryptography import utils
-from cryptography.exceptions import AlreadyFinalized, UnsupportedInterface
+from cryptography.exceptions import (
+    AlreadyFinalized, UnsupportedAlgorithm, _Reasons
+)
 from cryptography.hazmat.backends.interfaces import HashBackend
 from cryptography.hazmat.primitives import interfaces
 
@@ -25,8 +25,10 @@ from cryptography.hazmat.primitives import interfaces
 class Hash(object):
     def __init__(self, algorithm, backend, ctx=None):
         if not isinstance(backend, HashBackend):
-            raise UnsupportedInterface(
-                "Backend object does not implement HashBackend")
+            raise UnsupportedAlgorithm(
+                "Backend object does not implement HashBackend.",
+                _Reasons.BACKEND_MISSING_INTERFACE
+            )
 
         if not isinstance(algorithm, interfaces.HashAlgorithm):
             raise TypeError("Expected instance of interfaces.HashAlgorithm.")
@@ -41,21 +43,21 @@ class Hash(object):
 
     def update(self, data):
         if self._ctx is None:
-            raise AlreadyFinalized("Context was already finalized")
-        if isinstance(data, six.text_type):
-            raise TypeError("Unicode-objects must be encoded before hashing")
+            raise AlreadyFinalized("Context was already finalized.")
+        if not isinstance(data, bytes):
+            raise TypeError("data must be bytes.")
         self._ctx.update(data)
 
     def copy(self):
         if self._ctx is None:
-            raise AlreadyFinalized("Context was already finalized")
+            raise AlreadyFinalized("Context was already finalized.")
         return Hash(
             self.algorithm, backend=self._backend, ctx=self._ctx.copy()
         )
 
     def finalize(self):
         if self._ctx is None:
-            raise AlreadyFinalized("Context was already finalized")
+            raise AlreadyFinalized("Context was already finalized.")
         digest = self._ctx.finalize()
         self._ctx = None
         return digest

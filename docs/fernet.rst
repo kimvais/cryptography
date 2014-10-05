@@ -34,12 +34,13 @@ symmetric (also known as "secret key") authenticated cryptography.
         they'll also be able forge arbitrary messages that will be
         authenticated and decrypted.
 
-    .. method:: encrypt(plaintext)
+    .. method:: encrypt(data)
 
-        :param bytes plaintext: The message you would like to encrypt.
+        :param bytes data: The message you would like to encrypt.
         :returns bytes: A secure message that cannot be read or altered
                         without the key. It is URL-safe base64-encoded. This is
                         referred to as a "Fernet token".
+        :raises TypeError: This exception is raised if ``data`` is not ``bytes``.
 
         .. note::
 
@@ -66,6 +67,7 @@ symmetric (also known as "secret key") authenticated cryptography.
                                                   ``ttl``, it is malformed, or
                                                   it does not have a valid
                                                   signature.
+        :raises TypeError: This exception is raised if ``token`` is not ``bytes``.
 
 
 .. class:: InvalidToken
@@ -81,7 +83,7 @@ Specifically it uses:
 * :class:`~cryptography.hazmat.primitives.ciphers.algorithms.AES` in
   :class:`~cryptography.hazmat.primitives.ciphers.modes.CBC` mode with a
   128-bit key for encryption; using
-  :class:`~cryptography.hazmat.primitives.ciphers.PKCS7` padding.
+  :class:`~cryptography.hazmat.primitives.padding.PKCS7` padding.
 * :class:`~cryptography.hazmat.primitives.hmac.HMAC` using
   :class:`~cryptography.hazmat.primitives.hashes.SHA256` for authentication.
 * Initialization vectors are generated using ``os.urandom()``.
