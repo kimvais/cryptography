@@ -8,6 +8,9 @@ Submitting patches
 * Larger changes should be discussed on `our mailing list`_ before submission.
 * New features and significant bug fixes should be documented in the
   :doc:`/changelog`.
+* You must have legal permission to distribute any code you contribute to
+  ``cryptography``, and it must be available under both the BSD and Apache
+  Software License Version 2.0 licenses.
 
 If you believe you've identified a security issue in ``cryptography``, please
 follow the directions on the :doc:`security page </security>`.
@@ -22,7 +25,17 @@ configuration. You can also run the ``tox`` job with ``tox -e pep8``.
 
 `Write comments as complete sentences.`_
 
-Every code file must start with the boilerplate notice of the Apache License.
+Class names which contains acronyms or initialisms should always be
+capitalized. A class should be named ``HTTPClient``, not ``HttpClient``.
+
+Every code file must start with the boilerplate licensing notice:
+
+.. code-block:: python
+
+    # This file is dual licensed under the terms of the Apache License, Version
+    # 2.0, and the BSD License. See the LICENSE file in the root of this repository
+    # for complete details.
+
 Additionally, every Python code file must contain
 
 .. code-block:: python
@@ -138,6 +151,6 @@ So, specifically:
 
 .. _`Write comments as complete sentences.`: http://nedbatchelder.com/blog/201401/comments_should_be_sentences.html
 .. _`syntax`: http://sphinx-doc.org/domains.html#info-field-lists
-.. _`Studies have shown`: http://www.ibm.com/developerworks/rational/library/11-proven-practices-for-peer-review/
+.. _`Studies have shown`: https://smartbear.com/smartbear/media/pdfs/wp-cc-11-best-practices-of-peer-code-review.pdf
 .. _`our mailing list`: https://mail.python.org/mailman/listinfo/cryptography-dev
 .. _`doc8`: https://github.com/stackforge/doc8

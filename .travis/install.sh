@@ -4,109 +4,65 @@ set -e
 set -x
 
 if [[ "$(uname -s)" == 'Darwin' ]]; then
-    DARWIN=true
-else
-    DARWIN=false
-fi
+    brew update || brew update
 
-if [[ "${OPENSSL}" == "0.9.8" ]]; then
-    if [[ "$DARWIN" = true ]]; then
-        # travis has openssl installed via brew already, but let's be sure
-        if [[ "$(brew list | grep openssl)" != "openssl" ]]; then
-            brew install openssl
-        fi
-    else
-        sudo add-apt-repository "deb http://archive.ubuntu.com/ubuntu/ lucid main"
-        sudo apt-get -y update
-        sudo apt-get install -y --force-yes libssl-dev/lucid
+    if [[ "${OPENSSL}" != "0.9.8" ]]; then
+        brew outdated openssl || brew upgrade openssl
     fi
-fi
 
-if [[ "${TOX_ENV}" == "docs" ]]; then
-    if [[ "$DARWIN" = true ]]; then
-        brew update
-        brew install enchant
-    else
-        sudo apt-get -y update
-        sudo apt-get install libenchant-dev
-    fi
-fi
-
-if [[ "$DARWIN" = true ]]; then
     if which pyenv > /dev/null; then
         eval "$(pyenv init -)"
     fi
 
-    case "${TOX_ENV}" in
+    case "${TOXENV}" in
         py26)
             curl -O https://bootstrap.pypa.io/get-pip.py
-            sudo python get-pip.py
-            sudo pip install virtualenv
+            python get-pip.py --user
             ;;
         py27)
             curl -O https://bootstrap.pypa.io/get-pip.py
-            sudo python get-pip.py
-            sudo pip install virtualenv
-            ;;
-        pypy)
-            brew update
-            brew upgrade pyenv
-            pyenv install pypy-2.4.0
-            pyenv global pypy-2.4.0
-            pip install virtualenv
-            ;;
-        py32)
-            pyenv install 3.2.5
-            pyenv global 3.2.5
-            pip install virtualenv
+            python get-pip.py --user
             ;;
         py33)
-            pyenv install 3.3.5
-            pyenv global 3.3.5
-            pip install virtualenv
+            brew outdated pyenv || brew upgrade pyenv
+            pyenv install 3.3.6
+            pyenv global 3.3.6
             ;;
         py34)
-            pyenv install 3.4.1
-            pyenv global 3.4.1
-            pip install virtualenv
+            brew outdated pyenv || brew upgrade pyenv
+            pyenv install 3.4.2
+            pyenv global 3.4.2
+            ;;
+        pypy)
+            brew outdated pyenv || brew upgrade pyenv
+            pyenv install pypy-2.6.0
+            pyenv global pypy-2.6.0
+            ;;
+        pypy3)
+            brew outdated pyenv || brew upgrade pyenv
+            pyenv install pypy3-2.4.0
+            pyenv global pypy3-2.4.0
             ;;
         docs)
             curl -O https://bootstrap.pypa.io/get-pip.py
-            sudo python get-pip.py
-            sudo pip install virtualenv
+            python get-pip.py --user
             ;;
     esac
     pyenv rehash
+    python -m pip install --user virtualenv
 else
-    # add mega-python ppa
-    sudo add-apt-repository -y ppa:fkrull/deadsnakes
-    sudo apt-get -y update
-
-    case "${TOX_ENV}" in
-        py26)
-            sudo apt-get install python2.6 python2.6-dev
-            ;;
-        py32)
-            sudo apt-get install python3.2 python3.2-dev
-            ;;
-        py33)
-            sudo apt-get install python3.3 python3.3-dev
-            ;;
-        py34)
-            sudo apt-get install python3.4 python3.4-dev
-            ;;
-        py3pep8)
-            sudo apt-get install python3.3 python3.3-dev
-            ;;
-        pypy)
-            sudo add-apt-repository -y ppa:pypy/ppa
-            sudo apt-get -y update
-            sudo apt-get install -y --force-yes pypy pypy-dev
-            ;;
-    esac
-    sudo pip install virtualenv
+    # temporary pyenv installation to get pypy-2.6 before container infra upgrade
+    if [[ "${TOXENV}" == "pypy" ]]; then
+        git clone https://github.com/yyuu/pyenv.git ~/.pyenv
+        PYENV_ROOT="$HOME/.pyenv"
+        PATH="$PYENV_ROOT/bin:$PATH"
+        eval "$(pyenv init -)"
+        pyenv install pypy-2.6.0
+        pyenv global pypy-2.6.0
+    fi
+    pip install virtualenv
 fi
 
-virtualenv ~/.venv
+python -m virtualenv ~/.venv
 source ~/.venv/bin/activate
-pip install tox coveralls
+pip install tox codecov

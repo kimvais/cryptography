@@ -1,15 +1,6 @@
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-# implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# This file is dual licensed under the terms of the Apache License, Version
+# 2.0, and the BSD License. See the LICENSE file in the root of this repository
+# for complete details.
 
 from __future__ import absolute_import, division, print_function
 
@@ -18,6 +9,7 @@ import os
 
 import pytest
 
+from cryptography.hazmat.backends.interfaces import CipherBackend
 from cryptography.hazmat.primitives.ciphers import algorithms, base, modes
 
 from .utils import generate_aead_test, generate_encrypt_test
@@ -30,7 +22,7 @@ from ...utils import load_nist_vectors
     ),
     skip_message="Does not support AES CBC",
 )
-@pytest.mark.cipher
+@pytest.mark.requires_backend_interface(interface=CipherBackend)
 class TestAESModeCBC(object):
     test_CBC = generate_encrypt_test(
         load_nist_vectors,
@@ -63,7 +55,7 @@ class TestAESModeCBC(object):
     ),
     skip_message="Does not support AES ECB",
 )
-@pytest.mark.cipher
+@pytest.mark.requires_backend_interface(interface=CipherBackend)
 class TestAESModeECB(object):
     test_ECB = generate_encrypt_test(
         load_nist_vectors,
@@ -96,7 +88,7 @@ class TestAESModeECB(object):
     ),
     skip_message="Does not support AES OFB",
 )
-@pytest.mark.cipher
+@pytest.mark.requires_backend_interface(interface=CipherBackend)
 class TestAESModeOFB(object):
     test_OFB = generate_encrypt_test(
         load_nist_vectors,
@@ -129,7 +121,7 @@ class TestAESModeOFB(object):
     ),
     skip_message="Does not support AES CFB",
 )
-@pytest.mark.cipher
+@pytest.mark.requires_backend_interface(interface=CipherBackend)
 class TestAESModeCFB(object):
     test_CFB = generate_encrypt_test(
         load_nist_vectors,
@@ -162,7 +154,7 @@ class TestAESModeCFB(object):
     ),
     skip_message="Does not support AES CFB8",
 )
-@pytest.mark.cipher
+@pytest.mark.requires_backend_interface(interface=CipherBackend)
 class TestAESModeCFB8(object):
     test_CFB8 = generate_encrypt_test(
         load_nist_vectors,
@@ -195,7 +187,7 @@ class TestAESModeCFB8(object):
     ),
     skip_message="Does not support AES CTR",
 )
-@pytest.mark.cipher
+@pytest.mark.requires_backend_interface(interface=CipherBackend)
 class TestAESModeCTR(object):
     test_CTR = generate_encrypt_test(
         load_nist_vectors,
@@ -212,7 +204,7 @@ class TestAESModeCTR(object):
     ),
     skip_message="Does not support AES GCM",
 )
-@pytest.mark.cipher
+@pytest.mark.requires_backend_interface(interface=CipherBackend)
 class TestAESModeGCM(object):
     test_GCM = generate_aead_test(
         load_nist_vectors,
@@ -261,3 +253,53 @@ class TestAESModeGCM(object):
         computed_ct = encryptor.update(pt) + encryptor.finalize()
         assert computed_ct == ct
         assert encryptor.tag == tag
+
+    def test_gcm_ciphertext_limit(self, backend):
+        encryptor = base.Cipher(
+            algorithms.AES(b"\x00" * 16),
+            modes.GCM(b"\x01" * 16),
+            backend=backend
+        ).encryptor()
+        encryptor._bytes_processed = modes.GCM._MAX_ENCRYPTED_BYTES - 16
+        encryptor.update(b"0" * 16)
+        assert (
+            encryptor._bytes_processed == modes.GCM._MAX_ENCRYPTED_BYTES
+        )
+        with pytest.raises(ValueError):
+            encryptor.update(b"0")
+
+    def test_gcm_aad_limit(self, backend):
+        encryptor = base.Cipher(
+            algorithms.AES(b"\x00" * 16),
+            modes.GCM(b"\x01" * 16),
+            backend=backend
+        ).encryptor()
+        encryptor._aad_bytes_processed = modes.GCM._MAX_AAD_BYTES - 16
+        encryptor.authenticate_additional_data(b"0" * 16)
+        assert encryptor._aad_bytes_processed == modes.GCM._MAX_AAD_BYTES
+        with pytest.raises(ValueError):
+            encryptor.authenticate_additional_data(b"0")
+
+    def test_gcm_ciphertext_increments(self, backend):
+        encryptor = base.Cipher(
+            algorithms.AES(b"\x00" * 16),
+            modes.GCM(b"\x01" * 16),
+            backend=backend
+        ).encryptor()
+        encryptor.update(b"0" * 8)
+        assert encryptor._bytes_processed == 8
+        encryptor.update(b"0" * 7)
+        assert encryptor._bytes_processed == 15
+        encryptor.update(b"0" * 18)
+        assert encryptor._bytes_processed == 33
+
+    def test_gcm_aad_increments(self, backend):
+        encryptor = base.Cipher(
+            algorithms.AES(b"\x00" * 16),
+            modes.GCM(b"\x01" * 16),
+            backend=backend
+        ).encryptor()
+        encryptor.authenticate_additional_data(b"0" * 8)
+        assert encryptor._aad_bytes_processed == 8
+        encryptor.authenticate_additional_data(b"0" * 18)
+        assert encryptor._aad_bytes_processed == 26

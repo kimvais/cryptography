@@ -16,7 +16,7 @@ Bumping the version number
 The next step in doing a release is bumping the version number in the
 software.
 
-* Update the version number in ``cryptography/__about__.py``.
+* Update the version number in ``src/cryptography/__about__.py``.
 * Update the version number in ``vectors/cryptography_vectors/__about__.py``.
 * Set the release date in the :doc:`/changelog`.
 * Do a commit indicating this.
@@ -67,6 +67,8 @@ Post-release tasks
 * Check for any outstanding code undergoing a deprecation cycle by looking in
   ``cryptography.utils`` for ``DeprecatedIn**`` definitions. If any exist open
   a ticket to increment them for the next release.
-* Send an email to the `mailing list`_ announcing the release.
+* Send an email to the `mailing list`_ and `python-announce`_ announcing the
+  release.
 
 .. _`mailing list`: https://mail.python.org/mailman/listinfo/cryptography-dev
+.. _`python-announce`: https://mail.python.org/mailman/listinfo/python-announce-list

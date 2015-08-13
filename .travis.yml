@@ -1,27 +1,117 @@
-language: c
-os:
-    - osx
-    - linux
-compiler:
-    - clang
-    - gcc
-env:
-    matrix:
-        - TOX_ENV=py26
-        - TOX_ENV=py27
-        - TOX_ENV=py32
-        - TOX_ENV=py33
-        - TOX_ENV=py34
-        - TOX_ENV=pypy
-        - TOX_ENV=py26 OPENSSL=0.9.8
-        - TOX_ENV=py27 OPENSSL=0.9.8
-        - TOX_ENV=py32 OPENSSL=0.9.8
-        - TOX_ENV=py33 OPENSSL=0.9.8
-        - TOX_ENV=py34 OPENSSL=0.9.8
-        - TOX_ENV=pypy OPENSSL=0.9.8
-        - TOX_ENV=docs
-        - TOX_ENV=pep8
-        - TOX_ENV=py3pep8
+sudo: false
+
+language: python
+
+cache:
+    directories:
+        - $HOME/.cache/pip
+
+matrix:
+    include:
+        - python: 2.6 # these are just to make travis's UI a bit prettier
+          env: TOXENV=py26
+        - python: 2.7
+          env: TOXENV=py27
+        - python: 3.3
+          env: TOXENV=py33
+        - python: 3.4
+          env: TOXENV=py34
+        - python: pypy
+          env: TOXENV=pypy
+        - python: 2.6
+          env: TOXENV=py26 OPENSSL=0.9.8
+          addons:
+              apt:
+                  sources:
+                      - lucid
+                  packages:
+                      - libssl-dev/lucid
+        - python: 2.7
+          env: TOXENV=py27 OPENSSL=0.9.8
+          addons:
+              apt:
+                  sources:
+                      - lucid
+                  packages:
+                      - libssl-dev/lucid
+        - python: 3.3
+          env: TOXENV=py33 OPENSSL=0.9.8
+          addons:
+              apt:
+                  sources:
+                      - lucid
+                  packages:
+                      - libssl-dev/lucid
+        - python: 3.4
+          env: TOXENV=py34 OPENSSL=0.9.8
+          addons:
+              apt:
+                  sources:
+                      - lucid
+                  packages:
+                      - libssl-dev/lucid
+        - python: pypy
+          env: TOXENV=pypy OPENSSL=0.9.8
+          addons:
+              apt:
+                  sources:
+                      - lucid
+                  packages:
+                      - libssl-dev/lucid
+        - python: 2.7
+          env: TOXENV=docs
+          addons:
+              apt:
+                  packages:
+                      - libenchant-dev
+        - python: 2.7
+          env: TOXENV=pep8
+        - python: 3.4
+          env: TOXENV=py3pep8
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=py26
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=py27
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=py33
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=py34
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=pypy
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=py26 OPENSSL=0.9.8
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=py27 OPENSSL=0.9.8
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=py33 OPENSSL=0.9.8
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=py34 OPENSSL=0.9.8
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=pypy OPENSSL=0.9.8
+        - language: generic
+          os: osx
+          osx_image: beta-xcode6.3
+          env: TOXENV=docs
 
 install:
     - ./.travis/install.sh
@@ -30,7 +120,7 @@ script:
     - ./.travis/run.sh
 
 after_success:
-    - source ~/.venv/bin/activate && coveralls
+    - ./.travis/upload_coverage.sh
 
 notifications:
     irc:
@@ -38,24 +128,5 @@ notifications:
             - "irc.freenode.org#cryptography-dev"
         use_notice: true
         skip_join: true
-
-matrix:
-    exclude:
-        - os: osx
-          compiler: gcc
-        - os: osx
-          env: TOX_ENV=pep8
-          compiler: clang
-        - os: osx
-          env: TOX_ENV=py3pep8
-          compiler: clang
-
-        - os: linux
-          env: TOX_ENV=docs
-          compiler: clang
-        - os: linux
-          env: TOX_ENV=pep8
-          compiler: clang
-        - os: linux
-          env: TOX_ENV=py3pep8
-          compiler: clang
+    webhooks:
+        - https://buildtimetrend.herokuapp.com/travis

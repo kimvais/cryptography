@@ -1,23 +1,12 @@
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-# implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# This file is dual licensed under the terms of the Apache License, Version
+# 2.0, and the BSD License. See the LICENSE file in the root of this repository
+# for complete details.
 
 from __future__ import absolute_import, division, print_function
 
 import pytest
 
-from cryptography.hazmat.bindings.openssl.binding import (
-    Binding, _get_windows_libraries
-)
+from cryptography.hazmat.bindings.openssl.binding import Binding
 
 
 class TestOpenSSL(object):
@@ -100,8 +89,8 @@ class TestOpenSSL(object):
 
     def test_add_engine_more_than_once(self):
         b = Binding()
-        res = b.lib.Cryptography_add_osrandom_engine()
-        assert res == 2
+        with pytest.raises(RuntimeError):
+            b._register_osrandom_engine()
 
     def test_ssl_ctx_options(self):
         # Test that we're properly handling 32-bit unsigned on all platforms.
@@ -143,12 +132,20 @@ class TestOpenSSL(object):
         assert resp == expected_options
         assert b.lib.SSL_get_mode(ssl) == expected_options
 
-    def test_windows_static_dynamic_libraries(self):
-        assert "ssleay32mt" in _get_windows_libraries("static")
+    def test_conditional_removal(self):
+        b = Binding()
+        if b.lib.OPENSSL_VERSION_NUMBER >= 0x10000000:
+            assert b.lib.X509_V_ERR_DIFFERENT_CRL_SCOPE
+            assert b.lib.X509_V_ERR_CRL_PATH_VALIDATION_ERROR
+        else:
+            with pytest.raises(AttributeError):
+                b.lib.X509_V_ERR_DIFFERENT_CRL_SCOPE
 
-        assert "ssleay32mt" in _get_windows_libraries("")
+            with pytest.raises(AttributeError):
+                b.lib.X509_V_ERR_CRL_PATH_VALIDATION_ERROR
 
-        assert "ssleay32" in _get_windows_libraries("dynamic")
-
-        with pytest.raises(ValueError):
-            _get_windows_libraries("notvalid")
+        if b.lib.OPENSSL_VERSION_NUMBER >= 0x10001000:
+            assert b.lib.CMAC_Init
+        else:
+            with pytest.raises(AttributeError):
+                b.lib.CMAC_Init

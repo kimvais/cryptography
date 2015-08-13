@@ -16,7 +16,7 @@ versions may work but are **not tested or supported**.
 
     .. attribute:: ffi
 
-        This is a :class:`cffi.FFI` instance. It can be used to allocate and
+        This is a ``cffi.FFI`` instance. It can be used to allocate and
         otherwise manipulate OpenSSL structures.
 
     .. attribute:: lib
@@ -46,4 +46,4 @@ OpenSSL.
 
 .. _`CFFI`: https://cffi.readthedocs.org/
 .. _`OpenSSL`: https://www.openssl.org/
-.. _`thread safety facilities`: http://www.openssl.org/docs/crypto/threads.html
+.. _`thread safety facilities`: https://www.openssl.org/docs/crypto/threads.html

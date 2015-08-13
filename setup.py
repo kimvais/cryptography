@@ -1,15 +1,6 @@
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#    http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-# implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# This file is dual licensed under the terms of the Apache License, Version
+# 2.0, and the BSD License. See the LICENSE file in the root of this repository
+# for complete details.
 
 from __future__ import absolute_import, division, print_function
 
@@ -27,27 +18,40 @@ from setuptools.command.test import test
 
 
 base_dir = os.path.dirname(__file__)
+src_dir = os.path.join(base_dir, "src")
+
+# When executing the setup.py, we need to be able to import ourselves, this
+# means that we need to add the src/ directory to the sys.path.
+sys.path.insert(0, src_dir)
 
 about = {}
-with open(os.path.join(base_dir, "cryptography", "__about__.py")) as f:
+with open(os.path.join(src_dir, "cryptography", "__about__.py")) as f:
     exec(f.read(), about)
 
 
-SETUPTOOLS_DEPENDENCY = "setuptools"
-CFFI_DEPENDENCY = "cffi>=0.8"
-SIX_DEPENDENCY = "six>=1.4.1"
 VECTORS_DEPENDENCY = "cryptography_vectors=={0}".format(about['__version__'])
 
 requirements = [
-    CFFI_DEPENDENCY,
-    SIX_DEPENDENCY,
-    SETUPTOOLS_DEPENDENCY
+    "idna>=2.0",
+    "pyasn1>=0.1.8",
+    "six>=1.4.1",
+    "setuptools",
 ]
+setup_requirements = []
+
+if sys.version_info < (3, 4):
+    requirements.append("enum34")
+
+if sys.version_info < (3, 3):
+    requirements.append("ipaddress")
+
+if platform.python_implementation() != "PyPy":
+    requirements.append("cffi>=1.1.0")
+    setup_requirements.append("cffi>=1.1.0")
 
 # If you add a new dep here you probably need to add it in the tox.ini as well
 test_requirements = [
     "pytest",
-    "pyasn1",
     "pretend",
     "iso8601",
 ]
@@ -73,52 +77,6 @@ if cc_is_available():
     )
 
 
-def get_ext_modules():
-    from cryptography.hazmat.bindings.commoncrypto.binding import (
-        Binding as CommonCryptoBinding
-    )
-    from cryptography.hazmat.bindings.openssl.binding import (
-        Binding as OpenSSLBinding
-    )
-    from cryptography.hazmat.primitives import constant_time, padding
-
-    ext_modules = [
-        OpenSSLBinding().ffi.verifier.get_extension(),
-        constant_time._ffi.verifier.get_extension(),
-        padding._ffi.verifier.get_extension()
-    ]
-    if cc_is_available():
-        ext_modules.append(CommonCryptoBinding().ffi.verifier.get_extension())
-    return ext_modules
-
-
-class CFFIBuild(build):
-    """
-    This class exists, instead of just providing ``ext_modules=[...]`` directly
-    in ``setup()`` because importing cryptography requires we have several
-    packages installed first.
-
-    By doing the imports here we ensure that packages listed in
-    ``setup_requires`` are already installed.
-    """
-
-    def finalize_options(self):
-        self.distribution.ext_modules = get_ext_modules()
-        build.finalize_options(self)
-
-
-class CFFIInstall(install):
-    """
-    As a consequence of CFFIBuild and it's late addition of ext_modules, we
-    need the equivalent for the ``install`` command to install into platlib
-    install-dir rather than purelib.
-    """
-
-    def finalize_options(self):
-        self.distribution.ext_modules = get_ext_modules()
-        install.finalize_options(self)
-
-
 class PyTest(test):
     def finalize_options(self):
         test.finalize_options(self)
@@ -136,7 +94,8 @@ class PyTest(test):
     def run_tests(self):
         # Import here because in module scope the eggs are not loaded.
         import pytest
-        errno = pytest.main(self.test_args)
+        test_args = [os.path.join(base_dir, "tests")]
+        errno = pytest.main(test_args)
         sys.exit(errno)
 
 
@@ -231,19 +190,26 @@ def keywords_with_side_effects(argv):
            for i in range(1, len(argv))):
         return {
             "cmdclass": {
-                "build": DummyCFFIBuild,
-                "install": DummyCFFIInstall,
+                "build": DummyBuild,
+                "install": DummyInstall,
                 "test": DummyPyTest,
             }
         }
     else:
+        cffi_modules = [
+            "src/_cffi_src/build_openssl.py:ffi",
+            "src/_cffi_src/build_constant_time.py:ffi",
+            "src/_cffi_src/build_padding.py:ffi",
+        ]
+        if cc_is_available():
+            cffi_modules.append("src/_cffi_src/build_commoncrypto.py:ffi")
+
         return {
-            "setup_requires": requirements,
+            "setup_requires": setup_requirements,
             "cmdclass": {
-                "build": CFFIBuild,
-                "install": CFFIInstall,
                 "test": PyTest,
-            }
+            },
+            "cffi_modules": cffi_modules
         }
 
 
@@ -252,7 +218,7 @@ setup_requires_error = ("Requested setup command that needs 'setup_requires' "
                         "free command or option.")
 
 
-class DummyCFFIBuild(build):
+class DummyBuild(build):
     """
     This class makes it very obvious when ``keywords_with_side_effects()`` has
     incorrectly interpreted the command line arguments to ``setup.py build`` as
@@ -263,7 +229,7 @@ class DummyCFFIBuild(build):
         raise RuntimeError(setup_requires_error)
 
 
-class DummyCFFIInstall(install):
+class DummyInstall(install):
     """
     This class makes it very obvious when ``keywords_with_side_effects()`` has
     incorrectly interpreted the command line arguments to ``setup.py install``
@@ -304,6 +270,7 @@ setup(
     classifiers=[
         "Intended Audience :: Developers",
         "License :: OSI Approved :: Apache Software License",
+        "License :: OSI Approved :: BSD License",
         "Natural Language :: English",
         "Operating System :: MacOS :: MacOS X",
         "Operating System :: POSIX",
@@ -315,7 +282,6 @@ setup(
         "Programming Language :: Python :: 2.6",
         "Programming Language :: Python :: 2.7",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.2",
         "Programming Language :: Python :: 3.3",
         "Programming Language :: Python :: 3.4",
         "Programming Language :: Python :: Implementation :: CPython",
@@ -323,7 +289,10 @@ setup(
         "Topic :: Security :: Cryptography",
     ],
 
-    packages=find_packages(exclude=["tests", "tests.*"]),
+    package_dir={"": "src"},
+    packages=find_packages(
+        where="src", exclude=["_cffi_src", "_cffi_src.*", "tests", "tests.*"]
+    ),
     include_package_data=True,
 
     install_requires=requirements,
@@ -331,7 +300,7 @@ setup(
 
     # for cffi
     zip_safe=False,
-    ext_package="cryptography",
+    ext_package="cryptography.hazmat.bindings",
     entry_points={
         "cryptography.backends": backends,
     },

@@ -4,14 +4,7 @@
 Symmetric encryption
 ====================
 
-.. currentmodule:: cryptography.hazmat.primitives.ciphers
-
-.. testsetup::
-
-    import binascii
-    key = binascii.unhexlify(b"0" * 32)
-    iv = binascii.unhexlify(b"0" * 32)
-
+.. module:: cryptography.hazmat.primitives.ciphers
 
 Symmetric encryption is a way to `encrypt`_ or hide the contents of material
 where the sender and receiver both use the same secret key. Note that symmetric
@@ -35,9 +28,12 @@ in an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
 
     .. doctest::
 
+        >>> import os
         >>> from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
         >>> from cryptography.hazmat.backends import default_backend
         >>> backend = default_backend()
+        >>> key = os.urandom(32)
+        >>> iv = os.urandom(16)
         >>> cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=backend)
         >>> encryptor = cipher.encryptor()
         >>> ct = encryptor.update(b"a secret message") + encryptor.finalize()
@@ -46,10 +42,10 @@ in an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
         'a secret message'
 
     :param algorithms: A
-        :class:`~cryptography.hazmat.primitives.interfaces.CipherAlgorithm`
+        :class:`~cryptography.hazmat.primitives.ciphers.CipherAlgorithm`
         provider such as those described
         :ref:`below <symmetric-encryption-algorithms>`.
-    :param mode: A :class:`~cryptography.hazmat.primitives.interfaces.Mode`
+    :param mode: A :class:`~cryptography.hazmat.primitives.ciphers.modes.Mode`
         provider such as those described
         :ref:`below <symmetric-encryption-modes>`.
     :param backend: A
@@ -63,7 +59,7 @@ in an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
     .. method:: encryptor()
 
         :return: An encrypting
-            :class:`~cryptography.hazmat.primitives.interfaces.CipherContext`
+            :class:`~cryptography.hazmat.primitives.ciphers.CipherContext`
             provider.
 
         If the backend doesn't support the requested combination of ``cipher``
@@ -73,7 +69,7 @@ in an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
     .. method:: decryptor()
 
         :return: A decrypting
-            :class:`~cryptography.hazmat.primitives.interfaces.CipherContext`
+            :class:`~cryptography.hazmat.primitives.ciphers.CipherContext`
             provider.
 
         If the backend doesn't support the requested combination of ``cipher``
@@ -196,7 +192,7 @@ Weak ciphers
 Modes
 ~~~~~
 
-.. currentmodule:: cryptography.hazmat.primitives.ciphers.modes
+.. module:: cryptography.hazmat.primitives.ciphers.modes
 
 .. class:: CBC(initialization_vector)
 
@@ -205,13 +201,13 @@ Modes
 
     **Padding is required when using this mode.**
 
-    :param bytes initialization_vector: Must be random bytes. They do not need
-        to be kept secret and they can be included in a transmitted message.
-        Must be the same number of bytes as the ``block_size`` of the cipher.
-        Each time something is encrypted a new ``initialization_vector`` should
-        be generated. Do not reuse an ``initialization_vector`` with a given
-        ``key``, and particularly do not use a constant
-        ``initialization_vector``.
+    :param bytes initialization_vector: Must be :doc:`random bytes
+        </random-numbers>`. They do not need to be kept secret and they can be
+        included in a transmitted message. Must be the same number of bytes as
+        the ``block_size`` of the cipher. Each time something is encrypted a
+        new ``initialization_vector`` should be generated. Do not reuse an
+        ``initialization_vector`` with a given ``key``, and particularly do not
+        use a constant ``initialization_vector``.
 
     A good construction looks like:
 
@@ -244,12 +240,12 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes nonce: Should be random bytes. It is critical to never reuse a
-        ``nonce`` with a given key.  Any reuse of a nonce with the same key
-        compromises the security of every message encrypted with that key. Must
-        be the same number of bytes as the ``block_size`` of the cipher with a
-        given key. The nonce does not need to be kept secret and may be
-        included with the ciphertext.
+    :param bytes nonce: Should be unique, a :term:`nonce`. It is
+        critical to never reuse a ``nonce`` with a given key.  Any reuse of a
+        nonce with the same key compromises the security of every message
+        encrypted with that key. Must be the same number of bytes as the
+        ``block_size`` of the cipher with a given key. The nonce does not need
+        to be kept secret and may be included with the ciphertext.
 
 .. class:: OFB(initialization_vector)
 
@@ -258,10 +254,11 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes initialization_vector: Must be random bytes. They do not need
-        to be kept secret and they can be included in a transmitted message.
-        Must be the same number of bytes as the ``block_size`` of the cipher.
-        Do not reuse an ``initialization_vector`` with a given ``key``.
+    :param bytes initialization_vector: Must be :doc:`random bytes
+        </random-numbers>`. They do not need to be kept secret and they can be
+        included in a transmitted message. Must be the same number of bytes as
+        the ``block_size`` of the cipher. Do not reuse an
+        ``initialization_vector`` with a given ``key``.
 
 .. class:: CFB(initialization_vector)
 
@@ -270,10 +267,11 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes initialization_vector: Must be random bytes. They do not need
-        to be kept secret and they can be included in a transmitted message.
-        Must be the same number of bytes as the ``block_size`` of the cipher.
-        Do not reuse an ``initialization_vector`` with a given ``key``.
+    :param bytes initialization_vector: Must be :doc:`random bytes
+        </random-numbers>`. They do not need to be kept secret and they can be
+        included in a transmitted message. Must be the same number of bytes as
+        the ``block_size`` of the cipher. Do not reuse an
+        ``initialization_vector`` with a given ``key``.
 
 .. class:: CFB8(initialization_vector)
 
@@ -283,17 +281,18 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes initialization_vector: Must be random bytes. They do not need
-        to be kept secret and they can be included in a transmitted message.
-        Must be the same number of bytes as the ``block_size`` of the cipher.
-        Do not reuse an ``initialization_vector`` with a given ``key``.
+    :param bytes initialization_vector: Must be :doc:`random bytes
+        </random-numbers>`. They do not need to be kept secret and they can be
+        included in a transmitted message. Must be the same number of bytes as
+        the ``block_size`` of the cipher. Do not reuse an
+        ``initialization_vector`` with a given ``key``.
 
 .. class:: GCM(initialization_vector, tag=None, min_tag_length=16)
 
     .. danger::
 
         When using this mode you **must** not use the decrypted data until
-        :meth:`~cryptography.hazmat.primitives.interfaces.CipherContext.finalize`
+        :meth:`~cryptography.hazmat.primitives.ciphers.CipherContext.finalize`
         has been called. GCM provides **no** guarantees of ciphertext integrity
         until decryption is complete.
 
@@ -306,11 +305,11 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes initialization_vector: Must be random bytes. They do not need
-        to be kept secret and they can be included in a transmitted message.
-        NIST `recommends a 96-bit IV length`_ for performance critical
-        situations but it can be up to 2\ :sup:`64` - 1 bits. Do not reuse an
-        ``initialization_vector`` with a given ``key``.
+    :param bytes initialization_vector: Must be unique, a :term:`nonce`.
+        They do not need to be kept secret and they can be included in a
+        transmitted message. NIST `recommends a 96-bit IV length`_ for
+        performance critical situations but it can be up to 2\ :sup:`64` - 1
+        bits. Do not reuse an ``initialization_vector`` with a given ``key``.
 
     .. note::
 
@@ -422,6 +421,8 @@ Insecure modes
 Interfaces
 ----------
 
+.. currentmodule:: cryptography.hazmat.primitives.ciphers
+
 .. class:: CipherContext
 
     When calling ``encryptor()`` or ``decryptor()`` on a ``Cipher`` object
@@ -437,8 +438,8 @@ Interfaces
     recommended padding is
     :class:`~cryptography.hazmat.primitives.padding.PKCS7`. If you are using a
     stream cipher mode (such as
-    :class:`~cryptography.hazmat.primitives.modes.CTR`) you don't have to worry
-    about this.
+    :class:`~cryptography.hazmat.primitives.ciphers.modes.CTR`) you don't have
+    to worry about this.
 
     .. method:: update(data)
 
@@ -472,7 +473,7 @@ Interfaces
     ``AEADEncryptionContext`` provider. ``AEADCipherContext`` contains an
     additional method :meth:`authenticate_additional_data` for adding
     additional authenticated but unencrypted data (see note below). You should
-    call this before calls to ``update``. When you are done call `finalize``
+    call this before calls to ``update``. When you are done call ``finalize``
     to finish the operation.
 
     .. note::
@@ -503,13 +504,110 @@ Interfaces
         :raises: :class:`~cryptography.exceptions.NotYetFinalized` if called
             before the context is finalized.
 
+.. class:: CipherAlgorithm
+
+    A named symmetric encryption algorithm.
+
+    .. attribute:: name
+
+        :type: str
+
+        The standard name for the mode, for example, "AES", "Camellia", or
+        "Blowfish".
+
+    .. attribute:: key_size
+
+        :type: int
+
+        The number of bits in the key being used.
+
+
+.. class:: BlockCipherAlgorithm
+
+    A block cipher algorithm.
+
+    .. attribute:: block_size
+
+        :type: int
+
+        The number of bits in a block.
+
+Interfaces used by the symmetric cipher modes described in
+:ref:`Symmetric Encryption Modes <symmetric-encryption-modes>`.
+
+.. currentmodule:: cryptography.hazmat.primitives.ciphers.modes
+
+.. class:: Mode
+
+    A named cipher mode.
+
+    .. attribute:: name
+
+        :type: str
+
+        This should be the standard shorthand name for the mode, for example
+        Cipher-Block Chaining mode is "CBC".
+
+        The name may be used by a backend to influence the operation of a
+        cipher in conjunction with the algorithm's name.
+
+    .. method:: validate_for_algorithm(algorithm)
+
+        :param cryptography.hazmat.primitives.ciphers.CipherAlgorithm algorithm:
+
+        Checks that the combination of this mode with the provided algorithm
+        meets any necessary invariants. This should raise an exception if they
+        are not met.
+
+        For example, the
+        :class:`~cryptography.hazmat.primitives.ciphers.modes.CBC` mode uses
+        this method to check that the provided initialization vector's length
+        matches the block size of the algorithm.
+
+
+.. class:: ModeWithInitializationVector
+
+    A cipher mode with an initialization vector.
+
+    .. attribute:: initialization_vector
+
+        :type: bytes
+
+        Exact requirements of the initialization are described by the
+        documentation of individual modes.
+
+
+.. class:: ModeWithNonce
+
+    A cipher mode with a nonce.
+
+    .. attribute:: nonce
+
+        :type: bytes
+
+        Exact requirements of the nonce are described by the documentation of
+        individual modes.
+
+
+.. class:: ModeWithAuthenticationTag
+
+    A cipher mode with an authentication tag.
+
+    .. attribute:: tag
+
+        :type: bytes
+
+        Exact requirements of the tag are described by the documentation of
+        individual modes.
+
+
 
 .. _`described by Colin Percival`: http://www.daemonology.net/blog/2009-06-11-cryptographic-right-answers.html
 .. _`recommends a 96-bit IV length`: http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-spec.pdf
 .. _`NIST SP-800-38D`: http://csrc.nist.gov/publications/nistpubs/800-38D/SP-800-38D.pdf
-.. _`Communications Security Establishment`: http://www.cse-cst.gc.ca
-.. _`encrypt`: https://ssd.eff.org/tech/encryption
+.. _`Communications Security Establishment`: https://www.cse-cst.gc.ca
+.. _`encrypt`: https://ssd.eff.org/en/module/what-encryption
 .. _`CRYPTREC`: http://www.cryptrec.go.jp/english/
-.. _`significant patterns in the output`: http://en.wikipedia.org/wiki/Cipher_block_chaining#Electronic_codebook_.28ECB.29
+.. _`significant patterns in the output`: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Electronic_Codebook_.28ECB.29
 .. _`International Data Encryption Algorithm`: https://en.wikipedia.org/wiki/International_Data_Encryption_Algorithm
 .. _`OpenPGP`: http://www.openpgp.org

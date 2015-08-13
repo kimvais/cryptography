@@ -15,13 +15,15 @@ Red Hat Enterprise Linux 5) and greater. Earlier versions may work but are
 
     * :class:`~cryptography.hazmat.backends.interfaces.CipherBackend`
     * :class:`~cryptography.hazmat.backends.interfaces.CMACBackend`
+    * :class:`~cryptography.hazmat.backends.interfaces.DERSerializationBackend`
     * :class:`~cryptography.hazmat.backends.interfaces.DSABackend`
+    * :class:`~cryptography.hazmat.backends.interfaces.EllipticCurveBackend`
     * :class:`~cryptography.hazmat.backends.interfaces.HashBackend`
     * :class:`~cryptography.hazmat.backends.interfaces.HMACBackend`
     * :class:`~cryptography.hazmat.backends.interfaces.PBKDF2HMACBackend`
-    * :class:`~cryptography.hazmat.backends.interfaces.PKCS8SerializationBackend`
     * :class:`~cryptography.hazmat.backends.interfaces.RSABackend`
-    * :class:`~cryptography.hazmat.backends.interfaces.TraditionalOpenSSLSerializationBackend`
+    * :class:`~cryptography.hazmat.backends.interfaces.PEMSerializationBackend`
+    * :class:`~cryptography.hazmat.backends.interfaces.X509Backend`
 
     It also exposes the following:
 
@@ -77,6 +79,6 @@ seeded from the same pool as ``/dev/random``.
 
 
 .. _`OpenSSL`: https://www.openssl.org/
-.. _`initializing the RNG`: https://en.wikipedia.org/wiki/OpenSSL#Predictable_keys_.28Debian-specific.29
-.. _`Yarrow`: http://en.wikipedia.org/wiki/Yarrow_algorithm
-.. _`Microsoft documentation`: http://msdn.microsoft.com/en-us/library/windows/desktop/aa379942(v=vs.85).aspx
+.. _`initializing the RNG`: https://en.wikipedia.org/wiki/OpenSSL#Predictable_private_keys_.28Debian-specific.29
+.. _`Yarrow`: https://en.wikipedia.org/wiki/Yarrow_algorithm
+.. _`Microsoft documentation`: https://msdn.microsoft.com/en-us/library/windows/desktop/aa379942(v=vs.85).aspx

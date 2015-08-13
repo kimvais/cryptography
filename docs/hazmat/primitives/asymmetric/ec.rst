@@ -3,26 +3,22 @@
 Elliptic curve cryptography
 ===========================
 
-.. currentmodule:: cryptography.hazmat.primitives.asymmetric.ec
+.. module:: cryptography.hazmat.primitives.asymmetric.ec
 
 
-.. function:: generate_private_key(curve, backend):
+.. function:: generate_private_key(curve, backend)
 
     .. versionadded:: 0.5
 
     Generate a new private key on ``curve`` for use with ``backend``.
 
-    :param backend: A
-        :class:`~cryptography.hazmat.primitives.interfaces.EllipticCurve`
-        provider.
+    :param backend: A :class:`EllipticCurve` provider.
 
     :param backend: A
         :class:`~cryptography.hazmat.backends.interfaces.EllipticCurveBackend`
         provider.
 
-    :returns: A new instance of a
-        :class:`~cryptography.hazmat.primitives.interfaces.EllipticCurvePrivateKey`
-        provider.
+    :returns: A new instance of a :class:`EllipticCurvePrivateKey` provider.
 
 
 Elliptic Curve Signature Algorithms
@@ -36,7 +32,7 @@ Elliptic Curve Signature Algorithms
     `FIPS 186-3`_, and later in `FIPS 186-4`_.
 
     :param algorithm: An instance of a
-        :class:`~cryptography.hazmat.primitives.interfaces.HashAlgorithm`
+        :class:`~cryptography.hazmat.primitives.hashes.HashAlgorithm`
         provider.
 
     .. doctest::
@@ -51,6 +47,11 @@ Elliptic Curve Signature Algorithms
         >>> signer.update(b"this is some data I'd like")
         >>> signer.update(b" to sign")
         >>> signature = signer.finalize()
+
+    The ``signature`` is a ``bytes`` object, whose contents is DER encoded as
+    described in :rfc:`3279`. This can be decoded using
+    :func:`~cryptography.hazmat.primitives.asymmetric.utils.decode_dss_signature`.
+
 
 
 .. class:: EllipticCurvePrivateNumbers(private_value, public_numbers)
@@ -81,8 +82,7 @@ Elliptic Curve Signature Algorithms
             :class:`~cryptography.hazmat.backends.interfaces.EllipticCurveBackend`
             provider.
 
-        :returns: A new instance of a
-            :class:`~cryptography.hazmat.primitives.interfaces.EllipticCurvePrivateKey`
+        :returns: A new instance of a :class:`EllipticCurvePrivateKey`
             provider.
 
 
@@ -94,7 +94,7 @@ Elliptic Curve Signature Algorithms
 
      .. attribute:: curve
 
-        :type: :class:`~cryptography.hazmat.primitives.interfaces.EllipticCurve`
+        :type: :class:`EllipticCurve`
 
         The elliptic curve for this key.
 
@@ -119,8 +119,7 @@ Elliptic Curve Signature Algorithms
             :class:`~cryptography.hazmat.backends.interfaces.EllipticCurveBackend`
             provider.
 
-        :returns: A new instance of a
-            :class:`~cryptography.hazmat.primitives.interfaces.EllipticCurvePublicKey`
+        :returns: A new instance of a :class:`EllipticCurvePublicKey`
             provider.
 
 Elliptic Curves
@@ -146,8 +145,7 @@ Currently `cryptography` only supports NIST curves, none of which are
 considered "safe" by the `SafeCurves`_ project run by Daniel J. Bernstein and
 Tanja Lange.
 
-All named curves are providers of
-:class:`~cryptography.hazmat.primtives.interfaces.EllipticCurve`.
+All named curves are providers of :class:`EllipticCurve`.
 
 .. class:: SECT571K1
 
@@ -254,11 +252,177 @@ All named curves are providers of
     SECG curve ``secp192r1``. Also called NIST P-192.
 
 
+.. class:: SECP256K1
+
+    .. versionadded:: 0.9
+
+    SECG curve ``secp256k1``.
+
+
+Key Interfaces
+~~~~~~~~~~~~~~
+
+.. class:: EllipticCurve
+
+    .. versionadded:: 0.5
+
+    A named elliptic curve.
+
+    .. attribute:: name
+
+        :type: string
+
+        The name of the curve. Usually the name used for the ASN.1 OID such as
+        ``secp256k1``.
+
+    .. attribute:: key_size
+
+        :type: int
+
+        The bit length of the curve's base point.
+
+
+.. class:: EllipticCurveSignatureAlgorithm
+
+    .. versionadded:: 0.5
+
+    A signature algorithm for use with elliptic curve keys.
+
+    .. attribute:: algorithm
+
+        :type: :class:`~cryptography.hazmat.primitives.hashes.HashAlgorithm`
+
+        The digest algorithm to be used with the signature scheme.
+
+
+.. class:: EllipticCurvePrivateKey
+
+    .. versionadded:: 0.5
+
+    An elliptic curve private key for use with an algorithm such as `ECDSA`_ or
+    `EdDSA`_.
+
+    .. method:: signer(signature_algorithm)
+
+        Sign data which can be verified later by others using the public key.
+        The signature is formatted as DER-encoded bytes, as specified in
+        :rfc:`3279`.
+
+        :param signature_algorithm: An instance of a
+            :class:`EllipticCurveSignatureAlgorithm` provider.
+
+        :returns:
+            :class:`~cryptography.hazmat.primitives.asymmetric.AsymmetricSignatureContext`
+
+    .. method:: public_key()
+
+        :return: :class:`EllipticCurvePublicKey`
+
+        The EllipticCurvePublicKey object for this private key.
+
+
+.. class:: EllipticCurvePrivateKeyWithSerialization
+
+    .. versionadded:: 0.8
+
+    Extends :class:`EllipticCurvePrivateKey`.
+
+    .. method:: private_numbers()
+
+        Create a :class:`EllipticCurvePrivateNumbers` object.
+
+        :returns: An :class:`EllipticCurvePrivateNumbers` instance.
+
+    .. method:: private_bytes(encoding, format, encryption_algorithm)
+
+        Allows serialization of the key to bytes. Encoding (
+        :attr:`~cryptography.hazmat.primitives.serialization.Encoding.PEM` or
+        :attr:`~cryptography.hazmat.primitives.serialization.Encoding.DER`),
+        format (
+        :attr:`~cryptography.hazmat.primitives.serialization.PrivateFormat.TraditionalOpenSSL`
+        or
+        :attr:`~cryptography.hazmat.primitives.serialization.PrivateFormat.PKCS8`)
+        and encryption algorithm (such as
+        :class:`~cryptography.hazmat.primitives.serialization.BestAvailableEncryption`
+        or :class:`~cryptography.hazmat.primitives.serialization.NoEncryption`)
+        are chosen to define the exact serialization.
+
+        :param encoding: A value from the
+            :class:`~cryptography.hazmat.primitives.serialization.Encoding` enum.
+
+        :param format: A value from the
+            :class:`~cryptography.hazmat.primitives.serialization.PrivateFormat` enum.
+
+        :param encryption_algorithm: An instance of an object conforming to the
+            :class:`~cryptography.hazmat.primitives.serialization.KeySerializationEncryption`
+            interface.
+
+        :return bytes: Serialized key.
+
+
+.. class:: EllipticCurvePublicKey
+
+    .. versionadded:: 0.5
+
+    An elliptic curve public key.
+
+    .. method:: verifier(signature, signature_algorithm)
+
+        Verify data was signed by the private key associated with this public
+        key.
+
+        :param bytes signature: The signature to verify. DER encoded as
+            specified in :rfc:`3279`.
+
+        :param signature_algorithm: An instance of a
+            :class:`EllipticCurveSignatureAlgorithm` provider.
+
+        :returns:
+            :class:`~cryptography.hazmat.primitives.asymmetric.AsymmetricVerificationContext`
+
+     .. attribute:: curve
+
+        :type: :class:`EllipticCurve`
+
+        The elliptic curve for this key.
+
+    .. method:: public_numbers()
+
+        Create a :class:`EllipticCurvePublicNumbers` object.
+
+        :returns: An :class:`EllipticCurvePublicNumbers` instance.
+
+    .. method:: public_bytes(encoding, format)
+
+        Allows serialization of the key to bytes. Encoding (
+        :attr:`~cryptography.hazmat.primitives.serialization.Encoding.PEM` or
+        :attr:`~cryptography.hazmat.primitives.serialization.Encoding.DER`) and
+        format (
+        :attr:`~cryptography.hazmat.primitives.serialization.PublicFormat.SubjectPublicKeyInfo`)
+        are chosen to define the exact serialization.
+
+        :param encoding: A value from the
+            :class:`~cryptography.hazmat.primitives.serialization.Encoding` enum.
+
+        :param format: A value from the
+            :class:`~cryptography.hazmat.primitives.serialization.PublicFormat` enum.
+
+        :return bytes: Serialized key.
+
+
+.. class:: EllipticCurvePublicKeyWithSerialization
+
+    .. versionadded:: 0.6
+
+    Alias for :class:`EllipticCurvePublicKey`.
+
 
 .. _`FIPS 186-3`: http://csrc.nist.gov/publications/fips/fips186-3/fips_186-3.pdf
 .. _`FIPS 186-4`: http://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.186-4.pdf
 .. _`some concern`: https://crypto.stackexchange.com/questions/10263/should-we-trust-the-nist-recommended-ecc-parameters
-.. _`less than 224 bits`: http://www.ecrypt.eu.org/documents/D.SPA.20.pdf
-.. _`64x lower computational cost than DH`: http://www.nsa.gov/business/programs/elliptic_curve.shtml
+.. _`less than 224 bits`: http://www.ecrypt.eu.org/ecrypt2/documents/D.SPA.20.pdf
+.. _`64x lower computational cost than DH`: https://www.nsa.gov/business/programs/elliptic_curve.shtml
 .. _`minimize the number of security concerns for elliptic-curve cryptography`: http://cr.yp.to/ecdh/curve25519-20060209.pdf
 .. _`SafeCurves`: http://safecurves.cr.yp.to/
+.. _`ECDSA`: https://en.wikipedia.org/wiki/ECDSA
+.. _`EdDSA`: https://en.wikipedia.org/wiki/EdDSA
